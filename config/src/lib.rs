@@ -119,15 +119,23 @@ pub struct Profile {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum NodeCondition {
-	Fixed(bool),
-	Direct(ResetCondition),
+	Fixed {
+		state: bool,
+	},
+	Direct {
+		reset: ResetCondition,
+	},
 	Router,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum EdgeCondition {
-	Fixed(bool),
-	Direct(usize),
+	Fixed {
+		state: bool,
+	},
+	Direct {
+		node: usize,
+	},
 	Router {
 		block: usize,
 		routes: Vec<(usize, usize)>,
@@ -135,7 +143,9 @@ pub enum EdgeCondition {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-pub struct BlockCondition(pub ResetCondition);
+pub struct BlockCondition {
+	pub reset: ResetCondition,
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum ResetCondition {
@@ -147,9 +157,11 @@ pub enum ResetCondition {
 pub struct Preset {
 	pub name: String,
 
-	pub nodes: Vec<(usize, bool)>,
+	pub nodes: Vec<(usize, NodeState)>,
 	pub blocks: Vec<(usize, BlockState)>,
 }
+
+type NodeState = bool;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum BlockState {
@@ -240,7 +252,7 @@ pub struct Style {
 	pub fill_color: Color,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Color {
 	pub r: u8,
 	pub g: u8,
@@ -248,7 +260,7 @@ pub struct Color {
 	pub a: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub enum FillStyle {
 	None,
 	Solid,
