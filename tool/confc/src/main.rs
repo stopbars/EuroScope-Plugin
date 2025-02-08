@@ -1,3 +1,5 @@
+mod map;
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufWriter;

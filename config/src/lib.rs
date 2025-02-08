@@ -194,7 +194,7 @@ pub struct Box {
 	pub max: Point,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct Point {
 	pub x: f32,
 	pub y: f32,
@@ -252,7 +252,7 @@ pub struct Style {
 	pub fill_color: Color,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Color {
 	pub r: u8,
 	pub g: u8,
