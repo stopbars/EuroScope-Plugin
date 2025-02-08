@@ -3,6 +3,13 @@
 version = 3
 
 [[package]]
+name = "bars-confc"
+version = "0.1.0"
+dependencies = [
+ "bars-config",
+]
+
+[[package]]
 name = "bars-config"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,11 @@
+[package]
+name = "bars-confc"
+version = "0.1.0"
+authors = ["Patrick Winters <19wintersp@gmail.com>"]
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[dependencies]
+bars-config.workspace = true
