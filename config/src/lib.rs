@@ -213,17 +213,17 @@ pub struct Target<T: Clone + Debug> {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeDisplay<T: Clone + Debug> {
-	pub off: Path<T>,
-	pub on: Path<T>,
-	pub selected: Path<T>,
+	pub off: Vec<Path<T>>,
+	pub on: Vec<Path<T>>,
+	pub selected: Vec<Path<T>>,
 
 	pub target: Target<T>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EdgeDisplay<T: Clone + Debug> {
-	pub off: Path<T>,
-	pub on: Path<T>,
+	pub off: Vec<Path<T>>,
+	pub on: Vec<Path<T>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
