@@ -9,3 +9,7 @@ repository.workspace = true
 
 [dependencies]
 bars-config.workspace = true
+anyhow.workspace = true
+clap = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
