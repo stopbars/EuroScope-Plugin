@@ -200,13 +200,13 @@ pub struct Point {
 	pub y: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct Geo {
 	pub lat: f32,
 	pub lon: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
 pub struct GeoPoint {
 	pub geo: Geo,
 	pub offset: Point,
@@ -218,12 +218,12 @@ pub struct Path<T: Clone + Debug> {
 	pub style: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Target<T: Clone + Debug> {
 	pub points: Vec<T>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct NodeDisplay<T: Clone + Debug> {
 	pub off: Vec<Path<T>>,
 	pub on: Vec<Path<T>>,
@@ -232,13 +232,13 @@ pub struct NodeDisplay<T: Clone + Debug> {
 	pub target: Target<T>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct EdgeDisplay<T: Clone + Debug> {
 	pub off: Vec<Path<T>>,
 	pub on: Vec<Path<T>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct BlockDisplay<T: Clone + Debug> {
 	pub target: Target<T>,
 }
