@@ -1,6 +1,6 @@
 mod map;
 
-use std::collections::HashMap;
+use std::collections::{ HashMap, VecDeque };
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
@@ -55,6 +55,113 @@ fn main() -> Result<()> {
 	}
 
 	Ok(())
+}
+
+fn resolve_routes(
+	edges: &HashMap<usize, Vec<usize>>,
+	joins: &Vec<Vec<Vec<usize>>>,
+) -> Resolved {
+	let mut conn1 = HashMap::new();
+	let mut conn2 = HashMap::new();
+
+	for vertex in joins {
+		for (i, sector1) in vertex.iter().enumerate() {
+			let mut edges = Vec::new();
+
+			for (j, sector2) in vertex.iter().enumerate() {
+				if i == j {
+					continue
+				}
+
+				for edge in sector2 {
+					edges.push(*edge);
+				}
+			}
+
+			for edge in sector1 {
+				if conn1.contains_key(&edge) {
+					conn2.insert(edge, edges.clone());
+				} else {
+					conn1.insert(edge, edges.clone());
+				}
+			}
+		}
+	}
+
+	let mut non_routes = Vec::new();
+	let mut conditions = HashMap::<usize, Vec<(usize, usize)>>::new();
+
+	for node1 in edges.keys() {
+		'pairs: for node2 in edges.keys() {
+			if node1 >= node2 {
+				continue
+			}
+
+			let target = edges.get(node2).unwrap();
+
+			let mut queue = VecDeque::from_iter(
+				edges
+					.get(node1)
+					.unwrap()
+					.iter()
+					.map(|k| (k, None))
+			);
+			let mut prev = HashMap::<usize, usize>::new();
+
+			while let Some((edge, last)) = queue.pop_front() {
+				if let Some(last) = last {
+					if prev.contains_key(edge) {
+						continue
+					} else {
+						prev.insert(*edge, last);
+					}
+				}
+
+				if target.contains(edge) {
+					let mut edge = Some(edge);
+					while let Some(this) = edge {
+						conditions
+							.entry(*this)
+							.or_default()
+							.push((*node1, *node2));
+
+						edge = prev.get(this);
+					}
+
+					continue 'pairs
+				}
+
+				if let Some(c1) = conn1.get(edge) {
+					let an = if last.map(|last| !c1.contains(&last)).unwrap_or(true) {
+						c1
+					} else if let Some(c2) = conn2.get(edge) {
+						c2
+					} else {
+						continue
+					};
+
+					for next in an {
+						queue.push_back((next, Some(*edge)));
+					}
+				} else {
+					eprintln!("warning: boundary edge with no connection");
+				}
+			}
+
+			non_routes.push((*node1, *node2));
+		}
+	}
+
+	Resolved {
+		non_routes,
+		conditions,
+	}
+}
+
+#[derive(Debug)]
+struct Resolved {
+	non_routes: Vec<(usize, usize)>,
+	conditions: HashMap<usize, Vec<(usize, usize)>>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
