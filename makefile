@@ -4,4 +4,8 @@ default:
 clean:
 	$(MAKE) -C plugin/ clean
 
-.PHONY: default clean
+format:
+	find plugin/ -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
+	cargo fmt
+
+.PHONY: default clean format

@@ -7,17 +7,17 @@ use std::fmt::Debug;
 use std::rc::Rc;
 
 use bars_config::{
-	BlockDisplay, Color, EdgeDisplay, FillStyle, Geo, GeoPoint, NodeDisplay, Path,
-	Point, Style, Target,
+	BlockDisplay, Color, EdgeDisplay, FillStyle, Geo, GeoPoint, NodeDisplay,
+	Path, Point, Style, Target,
 };
 
-use kml::{ Kml as KmlItem, KmlDocument };
-use kml::types::{ Geometry, Placemark, Style as KmlStyle, StyleMap };
+use kml::types::{Geometry, Placemark, Style as KmlStyle, StyleMap};
+use kml::{Kml as KmlItem, KmlDocument};
 
 use kurbo::PathEl;
 
-use usvg::{ Group, Node, Paint, Tree };
 use usvg::tiny_skia_path::PathSegment;
+use usvg::{Group, Node, Paint, Tree};
 
 pub fn convert<T: Clone + Debug + MinMax>(
 	input: impl Input<Point = T>,
@@ -49,15 +49,15 @@ pub fn convert<T: Clone + Debug + MinMax>(
 
 		if let Some(group_id) = input.id() {
 			context = match group_id {
-				"basemap"        => Context::Basemap,
-				"views"          => Context::Views,
-				"nodes:off"      => Context::NodesOff,
-				"nodes:on"       => Context::NodesOn,
+				"basemap" => Context::Basemap,
+				"views" => Context::Views,
+				"nodes:off" => Context::NodesOff,
+				"nodes:on" => Context::NodesOn,
 				"nodes:selected" => Context::NodesSelected,
-				"nodes:target"   => Context::NodesTarget,
-				"edges:off"      => Context::EdgesOff,
-				"edges:on"       => Context::EdgesOn,
-				"blocks:target"  => Context::BlocksTarget,
+				"nodes:target" => Context::NodesTarget,
+				"edges:off" => Context::EdgesOff,
+				"edges:on" => Context::EdgesOn,
+				"blocks:target" => Context::BlocksTarget,
 				_ => {
 					if let Some((_, group_id)) = group_id.split_once(':') {
 						id = Cow::Owned(
@@ -65,7 +65,7 @@ pub fn convert<T: Clone + Debug + MinMax>(
 								.split_once(SPLIT_CHARS)
 								.map(|s| s.0)
 								.unwrap_or(&group_id)
-								.into()
+								.into(),
 						);
 					}
 
@@ -75,16 +75,14 @@ pub fn convert<T: Clone + Debug + MinMax>(
 		}
 
 		for input_path in input.paths() {
-			let id = if let Some((_, id)) = input_path.id
+			let id = if let Some((_, id)) = input_path
+				.id
 				.as_ref()
 				.map(|s| s.as_str())
 				.unwrap_or("")
 				.split_once(':')
 			{
-				id
-					.split_once(SPLIT_CHARS)
-					.map(|s| s.0)
-					.unwrap_or(&id)
+				id.split_once(SPLIT_CHARS).map(|s| s.0).unwrap_or(&id)
 			} else {
 				id.as_ref()
 			};
@@ -93,12 +91,14 @@ pub fn convert<T: Clone + Debug + MinMax>(
 				map.views.push((
 					id.to_string(),
 					(
-						input_path.points
+						input_path
+							.points
 							.iter()
 							.cloned()
 							.reduce(|a, b| a.min(&b))
 							.unwrap(),
-						input_path.points
+						input_path
+							.points
 							.iter()
 							.cloned()
 							.reduce(|a, b| a.max(&b))
@@ -109,22 +109,20 @@ pub fn convert<T: Clone + Debug + MinMax>(
 				continue
 			}
 
-			let style = styles
-				.entry(input_path.style)
-				.or_insert_with(|| {
-					map.styles.push(Style {
-						stroke_width: input_path.style.stroke_width as f32,
-						stroke_color: input_path.style.stroke_color,
-						fill_style: if input_path.style.fill.is_some() {
-							FillStyle::Solid
-						} else {
-							FillStyle::None
-						},
-						fill_color: input_path.style.fill.unwrap_or_default(),
-					});
-
-					styles_offset + map.styles.len() - 1
+			let style = styles.entry(input_path.style).or_insert_with(|| {
+				map.styles.push(Style {
+					stroke_width: input_path.style.stroke_width as f32,
+					stroke_color: input_path.style.stroke_color,
+					fill_style: if input_path.style.fill.is_some() {
+						FillStyle::Solid
+					} else {
+						FillStyle::None
+					},
+					fill_color: input_path.style.fill.unwrap_or_default(),
 				});
+
+				styles_offset + map.styles.len() - 1
+			});
 			let path = Path {
 				points: input_path.points,
 				style: *style,
@@ -143,40 +141,33 @@ pub fn convert<T: Clone + Debug + MinMax>(
 
 			match context {
 				Context::NodesOff
-					| Context::NodesOn
-					| Context::NodesSelected
-					| Context::NodesTarget
-				=> {
-					let ent = map.nodes
-						.entry(id)
-						.or_insert_with(|| NodeDisplay {
-							off: Vec::new(),
-							on: Vec::new(),
-							selected: Vec::new(),
-							target: Target {
-								points: Vec::new(),
-							},
-						});
+				| Context::NodesOn
+				| Context::NodesSelected
+				| Context::NodesTarget => {
+					let ent = map.nodes.entry(id).or_insert_with(|| NodeDisplay {
+						off: Vec::new(),
+						on: Vec::new(),
+						selected: Vec::new(),
+						target: Target { points: Vec::new() },
+					});
 
 					match context {
 						Context::NodesOff => ent.off.push(path),
 						Context::NodesOn => ent.on.push(path),
 						Context::NodesSelected => ent.selected.push(path),
-						Context::NodesTarget => ent.target = Target {
-							points: path.points,
+						Context::NodesTarget => {
+							ent.target = Target {
+								points: path.points,
+							}
 						},
 						_ => unreachable!(),
 					}
 				},
-				Context::EdgesOff
-					| Context::EdgesOn
-				=> {
-					let ent = map.edges
-						.entry(id)
-						.or_insert_with(|| EdgeDisplay {
-							off: Vec::new(),
-							on: Vec::new(),
-						});
+				Context::EdgesOff | Context::EdgesOn => {
+					let ent = map.edges.entry(id).or_insert_with(|| EdgeDisplay {
+						off: Vec::new(),
+						on: Vec::new(),
+					});
 
 					match context {
 						Context::EdgesOff => ent.off.push(path),
@@ -185,18 +176,28 @@ pub fn convert<T: Clone + Debug + MinMax>(
 					}
 				},
 				Context::BlocksTarget => {
-					map.blocks.insert(id, BlockDisplay {
-						target: Target {
-							points: path.points,
+					map.blocks.insert(
+						id,
+						BlockDisplay {
+							target: Target {
+								points: path.points,
+							},
 						},
-					});
+					);
 				},
 				_ => unreachable!(),
 			}
 		}
 
 		for group in input.groups() {
-			visit(group, map, context, Cow::Borrowed(&id), styles, styles_offset);
+			visit(
+				group,
+				map,
+				context,
+				Cow::Borrowed(&id),
+				styles,
+				styles_offset,
+			);
 		}
 	}
 
@@ -210,7 +211,14 @@ pub fn convert<T: Clone + Debug + MinMax>(
 	};
 	let mut styles = HashMap::new();
 
-	visit(input, &mut map, Context::None, Cow::Borrowed(""), &mut styles, styles_offset);
+	visit(
+		input,
+		&mut map,
+		Context::None,
+		Cow::Borrowed(""),
+		&mut styles,
+		styles_offset,
+	);
 
 	map
 }
@@ -305,9 +313,7 @@ pub struct Svg<'a> {
 
 impl<'a> Svg<'a> {
 	pub fn new(svg: &'a Tree) -> Self {
-		Self {
-			group: svg.root(),
-		}
+		Self { group: svg.root() }
 	}
 }
 
@@ -319,12 +325,13 @@ impl Input for Svg<'_> {
 	fn id(&self) -> Option<&str> {
 		match self.group.id() {
 			"" => None,
-			s  => Some(s),
+			s => Some(s),
 		}
 	}
 
 	fn groups(&self) -> Vec<Self> {
-		self.group
+		self
+			.group
 			.children()
 			.iter()
 			.filter_map(|node| match node {
@@ -337,15 +344,15 @@ impl Input for Svg<'_> {
 	}
 
 	fn paths(&self) -> impl Iterator<Item = TempPath<Self::Point>> {
-		self.group
-			.children()
-			.iter()
-			.filter_map(|node| if let Node::Path(path) = node {
+		self.group.children().iter().filter_map(|node| {
+			if let Node::Path(path) = node {
 				let mut style = TempStyle {
 					stroke_width: 0,
 					stroke_color: Color::default(),
 					fill: path.fill().map(|fill| {
-						let Paint::Color(color) = fill.paint() else { unimplemented!() };
+						let Paint::Color(color) = fill.paint() else {
+							unimplemented!()
+						};
 						Color {
 							r: color.red,
 							g: color.blue,
@@ -358,7 +365,9 @@ impl Input for Svg<'_> {
 				if let Some(stroke) = path.stroke() {
 					style.stroke_width = stroke.width().get().ceil() as u8;
 
-					let Paint::Color(color) = stroke.paint() else { unimplemented!() };
+					let Paint::Color(color) = stroke.paint() else {
+						unimplemented!()
+					};
 					style.stroke_color = Color {
 						r: color.red,
 						g: color.blue,
@@ -380,15 +389,13 @@ impl Input for Svg<'_> {
 				}
 
 				kurbo::flatten(
-					data
-						.into_iter()
-						.map(|segment| match segment {
-							PathSegment::MoveTo(p) => PathEl::MoveTo(c(p)),
-							PathSegment::LineTo(p) => PathEl::LineTo(c(p)),
-							PathSegment::QuadTo(p, q) => PathEl::QuadTo(c(p), c(q)),
-							PathSegment::CubicTo(p, q, r) => PathEl::CurveTo(c(p), c(q), c(r)),
-							PathSegment::Close => PathEl::ClosePath,
-						}),
+					data.into_iter().map(|segment| match segment {
+						PathSegment::MoveTo(p) => PathEl::MoveTo(c(p)),
+						PathSegment::LineTo(p) => PathEl::LineTo(c(p)),
+						PathSegment::QuadTo(p, q) => PathEl::QuadTo(c(p), c(q)),
+						PathSegment::CubicTo(p, q, r) => PathEl::CurveTo(c(p), c(q), c(r)),
+						PathSegment::Close => PathEl::ClosePath,
+					}),
 					FLATTENING_TOLERANCE,
 					|el| {
 						let p = match el {
@@ -407,14 +414,15 @@ impl Input for Svg<'_> {
 				Some(TempPath {
 					id: match path.id() {
 						"" => None,
-						s  => Some(s.into()),
+						s => Some(s.into()),
 					},
 					points,
 					style,
 				})
 			} else {
 				None
-			})
+			}
+		})
 	}
 }
 
@@ -467,7 +475,8 @@ impl<'a> KmlInput<'a> {
 					line,
 					poly,
 					..
-				}) = child {
+				}) = child
+				{
 					let mut style = TempStyle {
 						stroke_width: line
 							.as_ref()
@@ -477,9 +486,7 @@ impl<'a> KmlInput<'a> {
 							.as_ref()
 							.and_then(|s| parse_color(&s.color))
 							.unwrap_or_default(),
-						fill: poly
-							.as_ref()
-							.and_then(|s| parse_color(&s.color)),
+						fill: poly.as_ref().and_then(|s| parse_color(&s.color)),
 					};
 
 					if style.fill.is_none() && style.stroke_width == 0 {
@@ -496,7 +503,8 @@ impl<'a> KmlInput<'a> {
 					id: Some(id),
 					pairs,
 					..
-				}) = child {
+				}) = child
+				{
 					for pair in pairs {
 						let style = *styles_ref.get(&pair.style_url).unwrap();
 						styles_ref.insert(format!("#{}", id), style);
@@ -505,10 +513,7 @@ impl<'a> KmlInput<'a> {
 			}
 		}
 
-		Self {
-			children,
-			styles,
-		}
+		Self { children, styles }
 	}
 }
 
@@ -516,25 +521,27 @@ impl Input for KmlInput<'_> {
 	type Point = GeoPoint;
 
 	fn id(&self) -> Option<&str> {
-		self.children
-			.iter()
-			.find_map(|kml| if let KmlItem::Element(element) = kml {
+		self.children.iter().find_map(|kml| {
+			if let KmlItem::Element(element) = kml {
 				(element.name == "name")
 					.then_some(element.content.as_ref().map(|s| s.as_str()))
 					.flatten()
 			} else {
 				None
-			})
+			}
+		})
 	}
 
 	fn groups(&self) -> Vec<Self> {
-		self.children
+		self
+			.children
 			.iter()
 			.filter_map(|kml| match kml {
 				KmlItem::KmlDocument(KmlDocument { elements, .. })
-					| KmlItem::Folder { elements, .. }
-					| KmlItem::Document { elements, .. }
-				=> Some(Self::new(elements, self.styles.clone())),
+				| KmlItem::Folder { elements, .. }
+				| KmlItem::Document { elements, .. } => {
+					Some(Self::new(elements, self.styles.clone()))
+				},
 				_ => None,
 			})
 			.collect()
@@ -582,20 +589,24 @@ impl Input for KmlInput<'_> {
 			}]
 		}
 
-		self.children
+		self
+			.children
 			.iter()
-			.filter_map(|kml| if let KmlItem::Placemark(Placemark {
-				name,
-				geometry: Some(geom),
-				style_url: Some(style_url),
-				..
-			}) = kml {
-				let styles = self.styles.borrow();
-				let style = styles.get(style_url)?;
+			.filter_map(|kml| {
+				if let KmlItem::Placemark(Placemark {
+					name,
+					geometry: Some(geom),
+					style_url: Some(style_url),
+					..
+				}) = kml
+				{
+					let styles = self.styles.borrow();
+					let style = styles.get(style_url)?;
 
-				Some(convert_geometry(geom, &name, *style))
-			} else {
-				None
+					Some(convert_geometry(geom, &name, *style))
+				} else {
+					None
+				}
 			})
 			.flatten()
 	}
@@ -613,9 +624,11 @@ impl<'a> GeoSvg<'a> {
 		Self {
 			svg: Svg::new(svg),
 			transform: [
-				(lat.1 - lat.0) / size.height() as f64, lat.0,
-				(lon.1 - lon.0) / size.width()  as f64, lon.0,
-			]
+				(lat.1 - lat.0) / size.height() as f64,
+				lat.0,
+				(lon.1 - lon.0) / size.width() as f64,
+				lon.0,
+			],
 		}
 	}
 
@@ -638,7 +651,9 @@ impl Input for GeoSvg<'_> {
 	}
 
 	fn groups(&self) -> Vec<Self> {
-		self.svg.group
+		self
+			.svg
+			.group
 			.children()
 			.iter()
 			.filter_map(|node| match node {
@@ -654,15 +669,14 @@ impl Input for GeoSvg<'_> {
 	}
 
 	fn paths(&self) -> impl Iterator<Item = TempPath<<Self as Input>::Point>> {
-		self.svg
-			.paths()
-			.map(|path| TempPath {
-				id: path.id,
-				points: path.points
-					.into_iter()
-					.map(|point| self.transform(point))
-					.collect(),
-				style: path.style,
-			})
+		self.svg.paths().map(|path| TempPath {
+			id: path.id,
+			points: path
+				.points
+				.into_iter()
+				.map(|point| self.transform(point))
+				.collect(),
+			style: path.style,
+		})
 	}
 }

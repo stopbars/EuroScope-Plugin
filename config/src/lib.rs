@@ -1,14 +1,14 @@
 use std::fmt::Debug;
-use std::io::{ Read, Write };
+use std::io::{Read, Write};
 
-use bincode::{ DefaultOptions, ErrorKind, Options };
 pub use bincode;
+use bincode::{DefaultOptions, ErrorKind, Options};
 
-use flate2::Compression;
 use flate2::read::DeflateDecoder;
 use flate2::write::DeflateEncoder;
+use flate2::Compression;
 
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 static MAGIC: &[u8] = b"\xffBARS\x13eu";
 const VERSION: u16 = 0;
@@ -76,7 +76,18 @@ pub struct Element {
 	pub condition: ElementCondition,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub enum ElementCondition {
 	Fixed(bool),
 	Node(usize),
@@ -123,14 +134,21 @@ pub struct Profile {
 	pub presets: Vec<Preset>,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub enum NodeCondition {
-	Fixed {
-		state: bool,
-	},
-	Direct {
-		reset: ResetCondition,
-	},
+	Fixed { state: bool },
+	Direct { reset: ResetCondition },
 	Router,
 }
 
@@ -148,12 +166,34 @@ pub enum EdgeCondition {
 	},
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub struct BlockCondition {
 	pub reset: ResetCondition,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub enum ResetCondition {
 	None,
 	TimeSecs(u32),
@@ -169,7 +209,18 @@ pub struct Preset {
 
 type NodeState = bool;
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub enum BlockState {
 	Clear,
 	Relax,
@@ -200,19 +251,25 @@ pub struct Box {
 	pub max: Point,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(
+	Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize,
+)]
 pub struct Point {
 	pub x: f32,
 	pub y: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(
+	Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize,
+)]
 pub struct Geo {
 	pub lat: f32,
 	pub lon: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize)]
+#[derive(
+	Clone, Copy, Debug, Default, PartialEq, PartialOrd, Deserialize, Serialize,
+)]
 pub struct GeoPoint {
 	pub geo: Geo,
 	pub offset: Point,
@@ -258,7 +315,19 @@ pub struct Style {
 	pub fill_color: Color,
 }
 
-#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Default,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub struct Color {
 	pub r: u8,
 	pub g: u8,
@@ -266,7 +335,18 @@ pub struct Color {
 	pub a: u8,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 pub enum FillStyle {
 	None,
 	Solid,
@@ -275,5 +355,5 @@ pub enum FillStyle {
 	HatchForwardDiagonal,
 	HatchBackwardDiagonal,
 	HatchCross,
-	HatchDiagonalCross
+	HatchDiagonalCross,
 }

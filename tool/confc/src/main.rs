@@ -1,11 +1,11 @@
 mod map;
 
-use std::collections::{ HashMap, VecDeque };
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use bars_config::{ self as lib, Config, Element };
+use bars_config::{self as lib, Config, Element};
 
 use anyhow::Result;
 
@@ -92,9 +92,7 @@ fn main() -> Result<()> {
 			let display = display.edges.remove(&edge.id).unwrap_or_default();
 
 			edge_ids.insert(edge.id, edges.len());
-			edges.push(lib::Edge {
-				display,
-			});
+			edges.push(lib::Edge { display });
 		}
 
 		let mut edge_conditions = HashMap::new();
@@ -103,25 +101,31 @@ fn main() -> Result<()> {
 		let mut blocks = Vec::new();
 		let mut block_ids = HashMap::new();
 		for block in input.blocks {
-			let edges = HashMap::from_iter(
-				block.edges
-					.iter()
-					.map(|(id, edges)| (
-						*node_ids.get(id).unwrap(),
-						edges.0.iter().map(|id| *edge_ids.get(id).unwrap()).collect(),
-					))
-			);
-			let joins = block.joins
-				.iter()
-				.map(|vertex| vertex
-					.iter()
-					.map(|edges| edges.0
+			let edges = HashMap::from_iter(block.edges.iter().map(|(id, edges)| {
+				(
+					*node_ids.get(id).unwrap(),
+					edges
+						.0
 						.iter()
 						.map(|id| *edge_ids.get(id).unwrap())
-						.collect()
-					)
-					.collect()
+						.collect(),
 				)
+			}));
+			let joins = block
+				.joins
+				.iter()
+				.map(|vertex| {
+					vertex
+						.iter()
+						.map(|edges| {
+							edges
+								.0
+								.iter()
+								.map(|id| *edge_ids.get(id).unwrap())
+								.collect()
+						})
+						.collect()
+				})
 				.collect();
 
 			let resolved = resolve_routes(&edges, &joins);
@@ -130,7 +134,11 @@ fn main() -> Result<()> {
 			}
 			edge_conditions.extend(resolved.conditions.into_iter());
 
-			let nodes = block.nodes.iter().map(|id| *node_ids.get(id).unwrap()).collect();
+			let nodes = block
+				.nodes
+				.iter()
+				.map(|id| *node_ids.get(id).unwrap())
+				.collect();
 			let display = display.blocks.remove(&block.id).unwrap_or_default();
 
 			block_ids.insert(block.id.clone(), blocks.len());
@@ -146,71 +154,85 @@ fn main() -> Result<()> {
 
 		let mut profiles = Vec::new();
 		for profile in input.profiles {
-			let default_node = profile.nodes
+			let default_node = profile
+				.nodes
 				.get(&IdList::wildcard())
 				.copied()
 				.unwrap_or_default();
 			let nodes = nodes
 				.iter()
-				.map(|node| profile.nodes
-					.iter()
-					.find(|(ids, _)| ids.0.contains(&Id(node.id.clone())))
-					.map(|(_, node)| *node)
-					.unwrap_or(default_node)
-					.convert()
-				)
+				.map(|node| {
+					profile
+						.nodes
+						.iter()
+						.find(|(ids, _)| ids.0.contains(&Id(node.id.clone())))
+						.map(|(_, node)| *node)
+						.unwrap_or(default_node)
+						.convert()
+				})
 				.collect();
 
-			let default_edge = profile.edges
+			let default_edge = profile
+				.edges
 				.get(&IdList::wildcard())
 				.cloned()
 				.unwrap_or_default();
 			let edges = edge_ids
 				.iter()
-				.map(|(id, index)| profile.edges
-					.iter()
-					.find(|(ids, _)| ids.0.contains(id))
-					.map(|(_, edge)| edge.clone())
-					.unwrap_or(default_edge.clone())
-					.convert(
-						&node_ids,
-						edge_blocks
-							.get(index)
-							.copied()
-							.zip(edge_conditions.get(index).cloned()),
-					)
-				)
+				.map(|(id, index)| {
+					profile
+						.edges
+						.iter()
+						.find(|(ids, _)| ids.0.contains(id))
+						.map(|(_, edge)| edge.clone())
+						.unwrap_or(default_edge.clone())
+						.convert(
+							&node_ids,
+							edge_blocks
+								.get(index)
+								.copied()
+								.zip(edge_conditions.get(index).cloned()),
+						)
+				})
 				.collect();
 
-			let default_block = profile.blocks
+			let default_block = profile
+				.blocks
 				.get(&IdList::wildcard())
 				.copied()
 				.unwrap_or_default();
 			let blocks = blocks
 				.iter()
-				.map(|block| profile.blocks
-					.iter()
-					.find(|(ids, _)| ids.0.contains(&Id(block.id.clone())))
-					.map(|(_, block)| *block)
-					.unwrap_or(default_block)
-					.convert()
-				)
+				.map(|block| {
+					profile
+						.blocks
+						.iter()
+						.find(|(ids, _)| ids.0.contains(&Id(block.id.clone())))
+						.map(|(_, block)| *block)
+						.unwrap_or(default_block)
+						.convert()
+				})
 				.collect();
 
-			let presets = profile.presets
+			let presets = profile
+				.presets
 				.into_iter()
 				.map(|preset| lib::Preset {
 					name: preset.name,
-					nodes: preset.nodes
+					nodes: preset
+						.nodes
 						.into_iter()
-						.flat_map(|(ids, state)| ids.0
-							.iter()
-							.map(|id| *node_ids.get(id).unwrap())
-							.map(move |index| (index, state.clone()))
-							.collect::<Vec<_>>()
-						)
+						.flat_map(|(ids, state)| {
+							ids
+								.0
+								.iter()
+								.map(|id| *node_ids.get(id).unwrap())
+								.map(move |index| (index, state.clone()))
+								.collect::<Vec<_>>()
+						})
 						.collect(),
-					blocks: preset.blocks
+					blocks: preset
+						.blocks
 						.into_iter()
 						.flat_map(|(ids, state)| {
 							let state = match state {
@@ -222,7 +244,8 @@ fn main() -> Result<()> {
 								)),
 							};
 
-							ids.0
+							ids
+								.0
 								.into_iter()
 								.map(|id| *block_ids.get(&id).unwrap())
 								.map(move |index| (index, state))
@@ -347,11 +370,7 @@ fn resolve_routes(
 			let target = edges.get(node2).unwrap();
 
 			let mut queue = VecDeque::from_iter(
-				edges
-					.get(node1)
-					.unwrap()
-					.iter()
-					.map(|k| (k, None))
+				edges.get(node1).unwrap().iter().map(|k| (k, None)),
 			);
 			let mut prev = HashMap::<usize, usize>::new();
 
@@ -367,10 +386,7 @@ fn resolve_routes(
 				if target.contains(edge) {
 					let mut edge = Some(edge);
 					while let Some(this) = edge {
-						conditions
-							.entry(*this)
-							.or_default()
-							.push((*node1, *node2));
+						conditions.entry(*this).or_default().push((*node1, *node2));
 
 						edge = prev.get(this);
 					}
@@ -499,12 +515,8 @@ struct Profile {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 enum NodeCondition {
-	Fixed {
-		state: bool,
-	},
-	Direct {
-		timer: ResetCondition,
-	},
+	Fixed { state: bool },
+	Direct { timer: ResetCondition },
 	Router,
 }
 
@@ -524,21 +536,15 @@ impl NodeCondition {
 
 impl Default for NodeCondition {
 	fn default() -> Self {
-		Self::Fixed {
-			state: false,
-		}
+		Self::Fixed { state: false }
 	}
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 enum EdgeCondition {
-	Fixed {
-		state: bool,
-	},
-	Direct {
-		node: Id,
-	},
+	Fixed { state: bool },
+	Direct { node: Id },
 	Router,
 }
 
@@ -553,11 +559,13 @@ impl EdgeCondition {
 			Self::Direct { node } => lib::EdgeCondition::Direct {
 				node: *node_ids.get(&node).unwrap(),
 			},
-			Self::Router => if let Some((block, routes)) = router {
-				lib::EdgeCondition::Router { block, routes }
-			} else {
-				eprintln!("warning: edge is set to router but is not a block member");
-				lib::EdgeCondition::Fixed { state: false }
+			Self::Router => {
+				if let Some((block, routes)) = router {
+					lib::EdgeCondition::Router { block, routes }
+				} else {
+					eprintln!("warning: edge is set to router but is not a block member");
+					lib::EdgeCondition::Fixed { state: false }
+				}
 			},
 		}
 	}
@@ -565,9 +573,7 @@ impl EdgeCondition {
 
 impl Default for EdgeCondition {
 	fn default() -> Self {
-		Self::Fixed {
-			state: false,
-		}
+		Self::Fixed { state: false }
 	}
 }
 
@@ -579,7 +585,8 @@ struct BlockCondition {
 impl BlockCondition {
 	fn convert(self) -> lib::BlockCondition {
 		lib::BlockCondition {
-			reset: self.timer
+			reset: self
+				.timer
 				.map(|t| lib::ResetCondition::TimeSecs(t))
 				.unwrap_or(lib::ResetCondition::None),
 		}
@@ -588,9 +595,7 @@ impl BlockCondition {
 
 impl Default for BlockCondition {
 	fn default() -> Self {
-		Self {
-			timer: None,
-		}
+		Self { timer: None }
 	}
 }
 
