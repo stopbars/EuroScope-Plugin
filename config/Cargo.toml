@@ -9,4 +9,5 @@ repository.workspace = true
 
 [dependencies]
 bincode.workspace = true
+flate2.workspace = true
 serde = { workspace = true, features = ["derive"] }

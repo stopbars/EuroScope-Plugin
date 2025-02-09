@@ -119,6 +119,7 @@ name = "bars-config"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "flate2",
  "serde",
 ]
 

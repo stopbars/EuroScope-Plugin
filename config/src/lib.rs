@@ -4,6 +4,10 @@ use std::io::{ Read, Write };
 use bincode::{ DefaultOptions, ErrorKind, Options };
 pub use bincode;
 
+use flate2::Compression;
+use flate2::read::DeflateDecoder;
+use flate2::write::DeflateEncoder;
+
 use serde::{ Deserialize, Serialize };
 
 static MAGIC: &[u8] = b"\xffBARS\x13eu";
@@ -37,6 +41,7 @@ impl Config {
 			return Err(ErrorKind::Custom("unsupported config version".into()).into())
 		}
 
+		let reader = DeflateDecoder::new(reader);
 		bincode_options().deserialize_from(reader)
 	}
 
@@ -44,6 +49,7 @@ impl Config {
 		writer.write_all(&MAGIC)?;
 		writer.write_all(&VERSION.to_be_bytes())?;
 
+		let writer = DeflateEncoder::new(writer, Compression::best());
 		bincode_options().serialize_into(writer, self)
 	}
 }
