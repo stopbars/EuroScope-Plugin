@@ -1,16 +1,11 @@
-ARTIFACT = bars.dll
-
-XCC ?= clang-cl-16
-XLD ?= lld-link-16
-
-XWIN ?= /opt/xwin
-
-ifeq ($(wildcard $(XWIN)/sdk/include/um/windows.h),)
-$(error XWIN variable does not point to a valid installation)
+ifeq ($(MAKELEVEL),0)
+$(error Run "make plugin" from the parent directory)
 endif
 
+ARTIFACT = bars.dll
+
 CCFLAGS = \
-	--target=i686-pc-windows-msvc /std:c++20 /EHa /arch:SSE /I inc \
+	--target=$(TARGET) /std:c++20 /EHa /arch:SSE /I inc \
 	/imsvc $(XWIN)/crt/include /imsvc $(XWIN)/sdk/include/shared \
 	/imsvc $(XWIN)/sdk/include/ucrt /imsvc $(XWIN)/sdk/include/um \
 	-Wno-microsoft
