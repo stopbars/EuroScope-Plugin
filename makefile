@@ -3,6 +3,7 @@ default:
 
 clean:
 	$(MAKE) -C plugin/ clean
+	cargo clean
 
 format:
 	find plugin/ -name "*.cpp" -o -name "*.hpp" | xargs clang-format -i
