@@ -1,12 +1,14 @@
 use crate::Id;
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
 
 use bars_config::{
-	BlockDisplay, Color, EdgeDisplay, Geo, GeoPoint, NodeDisplay, Path, Point,
+	BlockDisplay, Color, EdgeDisplay, FillStyle, Geo, GeoPoint, NodeDisplay, Path,
+	Point, Style, Target,
 };
 
 use kml::{ Kml as KmlItem, KmlDocument };
@@ -14,6 +16,198 @@ use kml::types::{ Geometry, Placemark, Style as KmlStyle, StyleMap };
 
 use usvg::{ Group, Node, Paint, Tree };
 use usvg::tiny_skia_path::PathSegment;
+
+pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T> {
+	#[derive(Clone, Copy, PartialEq)]
+	enum Context {
+		None,
+		Basemap,
+		Views,
+		NodesOff,
+		NodesOn,
+		NodesSelected,
+		NodesTarget,
+		EdgesOff,
+		EdgesOn,
+		BlocksTarget,
+	}
+
+	fn visit<T: Clone + Debug + MinMax>(
+		input: impl Input<Point = T>,
+		map: &mut Map<T>,
+		mut context: Context,
+		mut id: Cow<str>,
+		styles: &mut HashMap<TempStyle, usize>,
+	) {
+		static SPLIT_CHARS: &[char] = &['_', ' ']; // inserted by Figma
+
+		if let Some(group_id) = input.id() {
+			context = match group_id {
+				"basemap"        => Context::Basemap,
+				"views"          => Context::Views,
+				"nodes:off"      => Context::NodesOff,
+				"nodes:on"       => Context::NodesOn,
+				"nodes:selected" => Context::NodesSelected,
+				"nodes:target"   => Context::NodesTarget,
+				"edges:off"      => Context::EdgesOff,
+				"edges:on"       => Context::EdgesOn,
+				"blocks:target"  => Context::BlocksTarget,
+				_ => {
+					if let Some((_, group_id)) = group_id.split_once(':') {
+						id = Cow::Owned(
+							group_id
+								.split_once(SPLIT_CHARS)
+								.map(|s| s.0)
+								.unwrap_or(&group_id)
+								.into()
+						);
+					}
+
+					context
+				},
+			};
+		}
+
+		for input_path in input.paths() {
+			let id = if let Some((_, id)) = input_path.id
+				.as_ref()
+				.map(|s| s.as_str())
+				.unwrap_or("")
+				.split_once(':')
+			{
+				id
+					.split_once(SPLIT_CHARS)
+					.map(|s| s.0)
+					.unwrap_or(&id)
+			} else {
+				id.as_ref()
+			};
+
+			if id.len() > 0 && context == Context::Views {
+				map.views.push((
+					id.to_string(),
+					(
+						input_path.points
+							.iter()
+							.cloned()
+							.reduce(|a, b| a.min(&b))
+							.unwrap(),
+						input_path.points
+							.iter()
+							.cloned()
+							.reduce(|a, b| a.max(&b))
+							.unwrap(),
+					),
+				));
+
+				continue
+			}
+
+			let style = styles
+				.entry(input_path.style)
+				.or_insert_with(|| {
+					map.styles.push(Style {
+						stroke_width: input_path.style.stroke_width as f32,
+						stroke_color: input_path.style.stroke_color,
+						fill_style: if input_path.style.fill.is_some() {
+							FillStyle::Solid
+						} else {
+							FillStyle::None
+						},
+						fill_color: input_path.style.fill.unwrap_or_default(),
+					});
+
+					map.styles.len() - 1
+				});
+			let path = Path {
+				points: input_path.points,
+				style: *style,
+			};
+
+			if context == Context::Basemap {
+				map.base.push(path);
+				continue
+			}
+
+			if id.is_empty() || context == Context::None {
+				continue
+			}
+
+			let id = Id(id.into());
+
+			match context {
+				Context::NodesOff
+					| Context::NodesOn
+					| Context::NodesSelected
+					| Context::NodesTarget
+				=> {
+					let ent = map.nodes
+						.entry(id)
+						.or_insert_with(|| NodeDisplay {
+							off: Vec::new(),
+							on: Vec::new(),
+							selected: Vec::new(),
+							target: Target {
+								points: Vec::new(),
+							},
+						});
+
+					match context {
+						Context::NodesOff => ent.off.push(path),
+						Context::NodesOn => ent.on.push(path),
+						Context::NodesSelected => ent.selected.push(path),
+						Context::NodesTarget => ent.target = Target {
+							points: path.points,
+						},
+						_ => unreachable!(),
+					}
+				},
+				Context::EdgesOff
+					| Context::EdgesOn
+				=> {
+					let ent = map.edges
+						.entry(id)
+						.or_insert_with(|| EdgeDisplay {
+							off: Vec::new(),
+							on: Vec::new(),
+						});
+
+					match context {
+						Context::EdgesOff => ent.off.push(path),
+						Context::EdgesOn => ent.on.push(path),
+						_ => unreachable!(),
+					}
+				},
+				Context::BlocksTarget => {
+					map.blocks.insert(id, BlockDisplay {
+						target: Target {
+							points: path.points,
+						},
+					});
+				},
+				_ => unreachable!(),
+			}
+		}
+
+		for group in input.groups() {
+			visit(group, map, context, Cow::Borrowed(&id), styles);
+		}
+	}
+
+	let mut map = Map {
+		base: Vec::new(),
+		nodes: HashMap::new(),
+		edges: HashMap::new(),
+		blocks: HashMap::new(),
+		views: Vec::new(),
+		styles: Vec::new(),
+	};
+	let mut styles = HashMap::new();
+
+	visit(input, &mut map, Context::None, Cow::Borrowed(""), &mut styles);
+
+	map
+}
 
 #[derive(Debug)]
 pub struct Map<T: Clone + Debug> {
@@ -24,9 +218,11 @@ pub struct Map<T: Clone + Debug> {
 	pub blocks: HashMap<Id, BlockDisplay<T>>,
 
 	pub views: Vec<(String, (T, T))>,
+
+	pub styles: Vec<Style>,
 }
 
-#[derive(Clone, Copy, Debug, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct TempStyle {
 	stroke_width: u8,
 	stroke_color: Color,
@@ -56,6 +252,38 @@ pub struct TempPath<T> {
 		}
 	}
 } */
+
+pub trait MinMax {
+	fn min(&self, other: &Self) -> Self;
+	fn max(&self, other: &Self) -> Self;
+}
+
+impl MinMax for Point {
+	fn min(&self, other: &Self) -> Self {
+		Self {
+			x: self.x.min(other.x),
+			y: self.y.min(other.y),
+		}
+	}
+
+	fn max(&self, other: &Self) -> Self {
+		Self {
+			x: self.x.max(other.x),
+			y: self.y.max(other.y),
+		}
+	}
+}
+
+// fake impl, views are not used for geo displays
+impl MinMax for GeoPoint {
+	fn min(&self, _other: &Self) -> Self {
+		*self
+	}
+
+	fn max(&self, _other: &Self) -> Self {
+		*self
+	}
+}
 
 pub trait Input: Sized {
 	type Point;
