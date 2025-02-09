@@ -19,7 +19,10 @@ use kurbo::PathEl;
 use usvg::{ Group, Node, Paint, Tree };
 use usvg::tiny_skia_path::PathSegment;
 
-pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T> {
+pub fn convert<T: Clone + Debug + MinMax>(
+	input: impl Input<Point = T>,
+	styles_offset: usize,
+) -> Map<T> {
 	#[derive(Clone, Copy, PartialEq)]
 	enum Context {
 		None,
@@ -40,6 +43,7 @@ pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T
 		mut context: Context,
 		mut id: Cow<str>,
 		styles: &mut HashMap<TempStyle, usize>,
+		styles_offset: usize,
 	) {
 		static SPLIT_CHARS: &[char] = &['_', ' ']; // inserted by Figma
 
@@ -119,7 +123,7 @@ pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T
 						fill_color: input_path.style.fill.unwrap_or_default(),
 					});
 
-					map.styles.len() - 1
+					styles_offset + map.styles.len() - 1
 				});
 			let path = Path {
 				points: input_path.points,
@@ -192,7 +196,7 @@ pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T
 		}
 
 		for group in input.groups() {
-			visit(group, map, context, Cow::Borrowed(&id), styles);
+			visit(group, map, context, Cow::Borrowed(&id), styles, styles_offset);
 		}
 	}
 
@@ -206,7 +210,7 @@ pub fn convert<T: Clone + Debug + MinMax>(input: impl Input<Point = T>) -> Map<T
 	};
 	let mut styles = HashMap::new();
 
-	visit(input, &mut map, Context::None, Cow::Borrowed(""), &mut styles);
+	visit(input, &mut map, Context::None, Cow::Borrowed(""), &mut styles, styles_offset);
 
 	map
 }
