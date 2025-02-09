@@ -14,6 +14,8 @@ use bars_config::{
 use kml::{ Kml as KmlItem, KmlDocument };
 use kml::types::{ Geometry, Placemark, Style as KmlStyle, StyleMap };
 
+use kurbo::PathEl;
+
 use usvg::{ Group, Node, Paint, Tree };
 use usvg::tiny_skia_path::PathSegment;
 
@@ -305,6 +307,8 @@ impl<'a> Svg<'a> {
 	}
 }
 
+const FLATTENING_TOLERANCE: f64 = 0.5;
+
 impl Input for Svg<'_> {
 	type Point = Point;
 
@@ -362,20 +366,46 @@ impl Input for Svg<'_> {
 				let mut data = path.data().segments();
 				data.set_auto_close(true);
 
+				let mut points = Vec::new();
+
+				fn c(point: usvg::tiny_skia_path::Point) -> kurbo::Point {
+					kurbo::Point {
+						x: point.x as f64,
+						y: point.y as f64,
+					}
+				}
+
+				kurbo::flatten(
+					data
+						.into_iter()
+						.map(|segment| match segment {
+							PathSegment::MoveTo(p) => PathEl::MoveTo(c(p)),
+							PathSegment::LineTo(p) => PathEl::LineTo(c(p)),
+							PathSegment::QuadTo(p, q) => PathEl::QuadTo(c(p), c(q)),
+							PathSegment::CubicTo(p, q, r) => PathEl::CurveTo(c(p), c(q), c(r)),
+							PathSegment::Close => PathEl::ClosePath,
+						}),
+					FLATTENING_TOLERANCE,
+					|el| {
+						let p = match el {
+							PathEl::MoveTo(p) => p,
+							PathEl::LineTo(p) => p,
+							PathEl::ClosePath => return,
+							_ => unreachable!(),
+						};
+						points.push(Point {
+							x: p.x as f32,
+							y: p.y as f32,
+						});
+					},
+				);
+
 				Some(TempPath {
 					id: match path.id() {
 						"" => None,
 						s  => Some(s.into()),
 					},
-					points: data
-						.filter_map(|segment| match segment {
-							PathSegment::MoveTo(p) => Some(p),
-							PathSegment::LineTo(p) => Some(p),
-							PathSegment::Close     => None,
-							_ => unimplemented!(),
-						})
-						.map(|point| Point { x: point.x, y: point.y })
-						.collect(),
+					points,
 					style,
 				})
 			} else {

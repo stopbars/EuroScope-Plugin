@@ -108,6 +108,7 @@ dependencies = [
  "bars-config",
  "clap",
  "kml",
+ "kurbo",
  "serde",
  "serde_json",
  "usvg",

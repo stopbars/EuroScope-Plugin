@@ -12,6 +12,7 @@ bars-config.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
 kml = { workspace = true, features = ["zip"] }
+kurbo.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 usvg.workspace = true
