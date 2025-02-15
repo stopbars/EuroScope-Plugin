@@ -24,7 +24,8 @@ default: client plugin
 
 client:
 	$(MAKE) -C client/
-	cp client/out/bars-client.hpp plugin/inc/
+	diff -s client/out/bars-client.hpp plugin/inc/bars-client.hpp \
+		|| cp client/out/bars-client.hpp plugin/inc/
 	cp target/$(TARGET)/$(PROFILE)/bars_client.lib plugin/lib/
 
 plugin:

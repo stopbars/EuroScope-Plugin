@@ -16,6 +16,7 @@ fn main() {
 
 	cbindgen::Builder::new()
 		.with_crate(dir)
+		.with_namespace("client")
 		.generate()
 		.map_or_else(
 			|error| match error {

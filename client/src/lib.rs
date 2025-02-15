@@ -1,6 +1,16 @@
-static HELLO_WORLD: &[u8] = b"Hello, world!\0";
+mod api;
+mod context;
 
-#[no_mangle]
-pub extern "C" fn hello() -> *const u8 {
-	HELLO_WORLD.as_ptr()
+use context::Context;
+
+pub use api::*;
+
+#[repr(C)]
+pub enum ConnectionState {
+	Disconnected,
+	Connecting,
+	ConnectedDirect,
+	ConnectedProxy,
+	ConnectedLocal,
+	Poisoned,
 }
