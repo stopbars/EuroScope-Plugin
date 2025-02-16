@@ -134,12 +134,12 @@ pub enum ServerChannel {
 }
 
 impl ServerChannel {
-	pub async fn send(&mut self, message: Downstream) -> Result<()> {
+	/* pub async fn send(&mut self, message: Downstream) -> Result<()> {
 		match self {
 			Self::Mpsc { tx, .. } => Self::send_mpsc(tx, message).await,
 			Self::Tcp(stream) => Self::send_tcp(stream, message).await,
 		}
-	}
+	} */
 
 	async fn send_mpsc(
 		tx: &mut UnboundedSender<Downstream>,
@@ -158,7 +158,7 @@ impl ServerChannel {
 		Ok(())
 	}
 
-	pub async fn recv(&mut self) -> Result<Upstream> {
+	/* pub async fn recv(&mut self) -> Result<Upstream> {
 		match self {
 			Self::Mpsc { rx, .. } => Self::recv_mpsc(rx).await,
 			Self::Tcp(stream) => {
@@ -166,7 +166,7 @@ impl ServerChannel {
 				Self::recv_tcp(stream).await
 			},
 		}
-	}
+	} */
 
 	async fn recv_mpsc(rx: &mut UnboundedReceiver<Upstream>) -> Result<Upstream> {
 		match rx.recv().await {
