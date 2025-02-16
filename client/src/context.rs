@@ -1,8 +1,9 @@
 use crate::client::Client;
 use crate::config::{ConfigMapping, LocalConfig};
 use crate::ipc::Channel;
+use crate::screen::Screen;
 use crate::server::{ConnectOptions, Server};
-use crate::ConnectionState;
+use crate::{ActivityState, ConnectionState};
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -26,6 +27,7 @@ pub struct Context {
 	messages: VecDeque<String>,
 	dir: PathBuf,
 	state: ConnectionState,
+	tracked: Vec<String>,
 }
 
 impl Context {
@@ -103,6 +105,7 @@ impl Context {
 			messages: VecDeque::new(),
 			dir: dir.into(),
 			state: ConnectionState::Disconnected,
+			tracked: Vec::new(),
 		})
 	}
 
@@ -163,7 +166,11 @@ impl Context {
 
 	fn create_client(&mut self, channel: Channel) -> Option<()> {
 		match Client::new(channel) {
-			Ok(client) => {
+			Ok(mut client) => {
+				for tracked in &self.tracked {
+					let _ = client.set_activity(tracked.clone(), ActivityState::None);
+				}
+
 				self.client = Some(client);
 				Some(())
 			},
@@ -276,5 +283,27 @@ impl Context {
 
 	pub fn add_message(&mut self, message: String) {
 		self.messages.push_back(message)
+	}
+
+	pub fn create_screen(&mut self, geo: bool) -> Screen {
+		Screen::new(self, geo)
+	}
+
+	pub fn client(&self) -> Option<&Client> {
+		self.client.as_ref()
+	}
+
+	pub fn client_mut(&mut self) -> Option<&mut Client> {
+		self.client.as_mut()
+	}
+
+	pub fn track_aerodrome(&mut self, icao: String) {
+		self.tracked.push(icao);
+	}
+
+	pub fn untrack_aerodrome(&mut self, icao: &String) {
+		if let Some(i) = self.tracked.iter().position(|s| s == icao) {
+			self.tracked.swap_remove(i);
+		}
 	}
 }

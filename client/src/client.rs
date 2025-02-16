@@ -59,15 +59,36 @@ impl Client {
 
 		Ok(())
 	}
+
+	pub fn set_activity(
+		&mut self,
+		icao: String,
+		state: ActivityState,
+	) -> Result<()> {
+		self.channel.send(Upstream::Activity { icao, state })
+	}
+
+	pub fn aerodrome(&self, icao: &String) -> Option<&Aerodrome> {
+		self.aerodromes.get(icao)
+	}
+
+	pub fn aerodrome_mut(&mut self, icao: &String) -> Option<&mut Aerodrome> {
+		self.aerodromes.get_mut(icao)
+	}
 }
 
 pub struct Aerodrome {
 	config: bars_config::Aerodrome,
 	state: ActivityState,
 	profile: Option<String>,
-	nodes: Vec<NodeState>,
-	blocks: Vec<BlockState>,
+	nodes: Vec<State<NodeState>>,
+	blocks: Vec<State<BlockState>>,
 	aircraft: HashSet<String>,
+}
+
+struct State<T> {
+	current: T,
+	pending: T,
 }
 
 impl Aerodrome {
@@ -92,5 +113,9 @@ impl Aerodrome {
 		blocks: HashMap<String, BlockState>,
 	) {
 		todo!()
+	}
+
+	pub fn state(&self) -> ActivityState {
+		self.state
 	}
 }

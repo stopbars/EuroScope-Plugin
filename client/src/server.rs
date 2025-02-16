@@ -193,7 +193,7 @@ impl Worker {
 				match message {
 					Upstream::Activity {
 						icao,
-						state: activity_state,
+						state: mut activity_state,
 					} => {
 						debug!("updating activity for {icao}");
 
@@ -216,6 +216,12 @@ impl Worker {
 									blocks: HashMap::new(),
 								}
 							});
+
+						if aerodrome.state == ActivityState::None
+							&& activity_state == ActivityState::None
+						{
+							activity_state = ActivityState::Observing;
+						}
 
 						if aerodrome.state != activity_state {
 							aerodrome.state = activity_state;

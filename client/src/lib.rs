@@ -3,6 +3,7 @@ mod client;
 mod config;
 mod context;
 mod ipc;
+mod screen;
 mod server;
 
 use serde::{Deserialize, Serialize};
