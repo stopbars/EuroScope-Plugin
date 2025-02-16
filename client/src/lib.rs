@@ -5,8 +5,22 @@ mod context;
 mod ipc;
 mod server;
 
+use serde::{Deserialize, Serialize};
+
 pub use api::*;
 
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 #[repr(C)]
 pub enum ConnectionState {
 	Disconnected,
@@ -17,6 +31,18 @@ pub enum ConnectionState {
 	Poisoned,
 }
 
+#[derive(
+	Clone,
+	Copy,
+	Debug,
+	Hash,
+	PartialEq,
+	Eq,
+	PartialOrd,
+	Ord,
+	Deserialize,
+	Serialize,
+)]
 #[repr(C)]
 pub enum ActivityState {
 	None,

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
@@ -32,6 +32,8 @@ impl LocalConfig {
 #[derive(Default, Deserialize, Serialize)]
 pub struct ConfigMapping {
 	pub config: Vec<ConfigSource>,
+	#[serde(default)]
+	pub base: PathBuf,
 }
 
 impl ConfigMapping {
@@ -39,7 +41,10 @@ impl ConfigMapping {
 		let p = dir.join("config.toml");
 		if std::fs::exists(&p)? {
 			let s = std::fs::read_to_string(&p)?;
-			Ok(toml::from_str(&s)?)
+			Ok(Self {
+				base: dir.into(),
+				..toml::from_str(&s)?
+			})
 		} else {
 			Ok(Self::default())
 		}

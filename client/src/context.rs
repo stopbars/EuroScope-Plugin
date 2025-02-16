@@ -1,5 +1,5 @@
 use crate::client::Client;
-use crate::config::LocalConfig;
+use crate::config::{ConfigMapping, LocalConfig};
 use crate::ipc::Channel;
 use crate::server::{ConnectOptions, Server};
 use crate::ConnectionState;
@@ -135,7 +135,16 @@ impl Context {
 		&mut self,
 		options: Option<ConnectOptions>,
 	) -> Option<Channel> {
-		match Server::new(options) {
+		let mapping = match ConfigMapping::load(&self.dir) {
+			Ok(mapping) => mapping,
+			Err(err) => {
+				warn!("{err}");
+				self.add_message("failed to load config mapping".into());
+				return None
+			},
+		};
+
+		match Server::new(options, mapping) {
 			Ok((server, channel)) => {
 				self.server = Some(server);
 				Some(channel)

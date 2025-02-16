@@ -1,5 +1,10 @@
-use crate::ipc::{Channel, Downstream, ServerChannel, Upstream};
+use crate::config::ConfigMapping;
+use crate::ipc::{
+	BlockState, Channel, Downstream, NodeState, ServerChannel, Upstream,
+};
+use crate::ActivityState;
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
@@ -28,7 +33,10 @@ pub struct Server {
 }
 
 impl Server {
-	pub fn new(connect: Option<ConnectOptions>) -> Result<(Self, Channel)> {
+	pub fn new(
+		connect: Option<ConnectOptions>,
+		mapping: ConfigMapping,
+	) -> Result<(Self, Channel)> {
 		let (channel, server_channel) = crate::ipc::mpsc_pair();
 
 		let runtime = RuntimeBuilder::new_current_thread().enable_io().build()?;
@@ -41,7 +49,8 @@ impl Server {
 				runtime.block_on(async {
 					debug!("worker thread spawned");
 
-					if let Err(err) = Worker::run(connect, server_channel).await {
+					if let Err(err) = Worker::run(connect, server_channel, mapping).await
+					{
 						error!("{err}");
 						let _ = ctx.send(());
 					} else {
@@ -81,29 +90,46 @@ impl Server {
 	}
 }
 
+struct Aerodrome {
+	config: Option<bars_config::Aerodrome>,
+	state: ActivityState,
+	profile: Option<String>,
+	nodes: HashMap<String, NodeState>,
+	blocks: HashMap<String, BlockState>,
+}
+
 #[derive(Clone)]
 struct Worker {
-	clients: Arc<Mutex<Vec<UnboundedSender<Downstream>>>>,
 	upstreams: UnboundedSender<Upstream>,
+	clients: Arc<Mutex<Vec<UnboundedSender<Downstream>>>>,
+
+	aerodromes: Arc<Mutex<HashMap<String, Aerodrome>>>,
+	config_mapping: Arc<ConfigMapping>,
+	config_cache: Arc<Mutex<Vec<Option<bars_config::Config>>>>,
 }
 
 impl Worker {
 	async fn run(
 		connect: Option<ConnectOptions>,
 		channel: ServerChannel,
+		mapping: ConfigMapping,
 	) -> Result<()> {
 		let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+		let config_cache = vec![None; mapping.config.len()];
 
 		Self {
-			clients: Arc::new(Mutex::new(Vec::new())),
 			upstreams: tx,
+			clients: Arc::new(Mutex::new(Vec::new())),
+			aerodromes: Arc::new(Mutex::new(HashMap::new())),
+			config_mapping: Arc::new(mapping),
+			config_cache: Arc::new(Mutex::new(config_cache)),
 		}
 		.run_impl(connect, channel, rx)
 		.await
 	}
 
 	async fn run_impl(
-		&mut self,
+		&self,
 		connect: Option<ConnectOptions>,
 		channel: ServerChannel,
 		upstream_rx: UnboundedReceiver<Upstream>,
@@ -115,7 +141,7 @@ impl Worker {
 			self.handle_local(upstream_rx).await?;
 		}
 
-		let mut state = self.clone();
+		let state = self.clone();
 		tokio::spawn(async move {
 			if let Err(err) = state.handle_channel(channel).await {
 				debug!("{err}");
@@ -125,17 +151,16 @@ impl Worker {
 		Ok(())
 	}
 
-	async fn bind(&mut self, port: u16) -> Result<()> {
+	async fn bind(&self, port: u16) -> Result<()> {
 		let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).await?;
 
 		let state = self.clone();
-
 		tokio::spawn(async move {
 			loop {
 				if let Ok((stream, remote)) = listener.accept().await {
 					debug!("accepted {remote}");
 
-					let mut state = state.clone();
+					let state = state.clone();
 					let channel = ServerChannel::Tcp(stream);
 					tokio::spawn(async move {
 						if let Err(err) = state.handle_channel(channel).await {
@@ -150,7 +175,7 @@ impl Worker {
 	}
 
 	async fn handle_connection(
-		&mut self,
+		&self,
 		rx: UnboundedReceiver<Upstream>,
 		_options: ConnectOptions,
 	) -> Result<()> {
@@ -159,12 +184,86 @@ impl Worker {
 	}
 
 	async fn handle_local(
-		&mut self,
+		&self,
 		mut rx: UnboundedReceiver<Upstream>,
 	) -> Result<()> {
+		let state = self.clone();
 		tokio::spawn(async move {
 			while let Some(message) = rx.recv().await {
 				match message {
+					Upstream::Activity {
+						icao,
+						state: activity_state,
+					} => {
+						debug!("updating activity for {icao}");
+
+						let mut aerodromes = state.aerodromes.lock().await;
+						let aerodrome =
+							aerodromes.entry(icao.clone()).or_insert_with_key(|icao| {
+								let state = state.clone();
+								let icao = icao.clone();
+								tokio::spawn(async move {
+									if let Err(err) = state.fetch_config(&icao).await {
+										warn!("{err}");
+									}
+								});
+
+								Aerodrome {
+									config: None,
+									state: ActivityState::None,
+									profile: None,
+									nodes: HashMap::new(),
+									blocks: HashMap::new(),
+								}
+							});
+
+						if aerodrome.state != activity_state {
+							aerodrome.state = activity_state;
+							state
+								.broadcast(Downstream::Activity {
+									icao,
+									state: aerodrome.state,
+								})
+								.await;
+						}
+					},
+					Upstream::Profile { icao, profile } => {
+						let mut aerodromes = state.aerodromes.lock().await;
+						if let Some(aerodrome) = aerodromes.get_mut(&icao) {
+							state
+								.broadcast(Downstream::Profile {
+									icao: icao.clone(),
+									profile: profile.clone(),
+								})
+								.await;
+
+							aerodrome.profile = Some(profile);
+						} else {
+							warn!("client profile update to inactive aerodrome {icao}");
+						}
+					},
+					Upstream::State {
+						icao,
+						nodes,
+						blocks,
+					} => {
+						let mut aerodromes = state.aerodromes.lock().await;
+						if let Some(aerodrome) = aerodromes.get_mut(&icao) {
+							state
+								.broadcast(Downstream::State {
+									icao: icao.clone(),
+									nodes: nodes.clone(),
+									blocks: blocks.clone(),
+								})
+								.await;
+
+							aerodrome.nodes.extend(nodes.into_iter());
+							aerodrome.blocks.extend(blocks.into_iter());
+						} else {
+							warn!("client state update to inactive aerodrome {icao}");
+						}
+					},
+					Upstream::Scenery { .. } => (),
 					_ => warn!("unknown message forwarded to local handler"),
 				}
 			}
@@ -173,7 +272,7 @@ impl Worker {
 		Ok(())
 	}
 
-	async fn handle_channel(&mut self, stream: ServerChannel) -> Result<()> {
+	async fn handle_channel(&self, stream: ServerChannel) -> Result<()> {
 		let (mut rx, mut tx) = stream.into_split();
 
 		let (tx_tx, mut tx_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -192,16 +291,112 @@ impl Worker {
 
 		loop {
 			match rx.recv().await? {
-				Upstream::Init => (),
+				Upstream::Init => {
+					for (icao, aerodrome) in self.aerodromes.lock().await.iter() {
+						let _ = tx_tx.send(Downstream::Activity {
+							icao: icao.clone(),
+							state: aerodrome.state,
+						});
+
+						if let Some(config) = &aerodrome.config {
+							let _ = tx_tx.send(Downstream::Config {
+								data: config.clone(),
+							});
+						}
+
+						if let Some(profile) = &aerodrome.profile {
+							let _ = tx_tx.send(Downstream::Profile {
+								icao: icao.clone(),
+								profile: profile.clone(),
+							});
+						}
+
+						if !aerodrome.nodes.is_empty() || !aerodrome.blocks.is_empty() {
+							let _ = tx_tx.send(Downstream::State {
+								icao: icao.clone(),
+								nodes: aerodrome.nodes.clone(),
+								blocks: aerodrome.blocks.clone(),
+							});
+						}
+					}
+				},
+				message => {
+					let _ = self.upstreams.send(message);
+				},
 			}
 		}
 	}
 
-	async fn broadcast(&mut self, message: Downstream) {
+	async fn broadcast(&self, message: Downstream) {
 		self
 			.clients
 			.lock()
 			.await
 			.retain(|tx| tx.send(message.clone()).is_ok());
+	}
+
+	async fn fetch_config(&self, icao: &String) -> Result<()> {
+		let Some((config_i, config)) = self
+			.config_mapping
+			.config
+			.iter()
+			.enumerate()
+			.find(|(_, config)| config.aerodromes.contains(icao))
+		else {
+			return Ok(())
+		};
+
+		let is_cached = {
+			let config_cache = self.config_cache.lock().await;
+			config_cache[config_i].is_some()
+		};
+
+		if !is_cached {
+			debug!("fetching uncached source {:?}", config.src);
+
+			let data = if config.src.contains("://") {
+				reqwest::get(&config.src).await?.bytes().await?.to_vec()
+			} else {
+				let path = self.config_mapping.base.join(&config.src);
+				tokio::fs::read(path).await?
+			};
+
+			let config = bars_config::Config::load(data.as_slice())?;
+
+			let mut config_cache = self.config_cache.lock().await;
+			config_cache[config_i] = Some(config);
+		}
+
+		let aerodrome = {
+			let mut config_cache = self.config_cache.lock().await;
+			if let Some(config) = &mut config_cache[config_i] {
+				debug!("using cached config {:?} for {icao}", config.name);
+
+				let Some(i) = config
+					.aerodromes
+					.iter()
+					.position(|aerodrome| &aerodrome.icao == icao)
+				else {
+					warn!("config is missing {icao}");
+					return Ok(())
+				};
+				config.aerodromes.swap_remove(i)
+			} else {
+				return Ok(())
+			}
+		};
+
+		self
+			.broadcast(Downstream::Config {
+				data: aerodrome.clone(),
+			})
+			.await;
+
+		let mut aerodromes = self.aerodromes.lock().await;
+		if let Some(entry) = aerodromes.get_mut(icao) {
+			entry.config = Some(aerodrome);
+		}
+
+		Ok(())
 	}
 }

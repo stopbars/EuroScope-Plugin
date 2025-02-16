@@ -1,3 +1,6 @@
+use crate::ActivityState;
+
+use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, TcpStream};
 
@@ -12,12 +15,63 @@ use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum Upstream {
-	Init,
+pub enum NodeState {
+	Off,
+	On,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum Downstream {}
+pub enum BlockState {
+	Clear,
+	Relax,
+	Route((String, String)),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Upstream {
+	Init,
+	Activity {
+		icao: String,
+		state: ActivityState,
+	},
+	Profile {
+		icao: String,
+		profile: String,
+	},
+	State {
+		icao: String,
+		nodes: HashMap<String, NodeState>,
+		blocks: HashMap<String, BlockState>,
+	},
+	Scenery {
+		icao: String,
+		elements: HashMap<String, bool>,
+	},
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Downstream {
+	Config {
+		data: bars_config::Aerodrome,
+	},
+	Activity {
+		icao: String,
+		state: ActivityState,
+	},
+	Profile {
+		icao: String,
+		profile: String,
+	},
+	State {
+		icao: String,
+		nodes: HashMap<String, NodeState>,
+		blocks: HashMap<String, BlockState>,
+	},
+	Aircraft {
+		icao: String,
+		aircraft: Vec<String>,
+	},
+}
 
 pub enum Channel {
 	Mpsc {
