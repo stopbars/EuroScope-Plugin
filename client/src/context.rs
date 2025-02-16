@@ -1,29 +1,57 @@
+use crate::client::Client;
+use crate::config::LocalConfig;
+use crate::ipc::Channel;
+use crate::server::{ConnectOptions, Server};
 use crate::ConnectionState;
 
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
 
 use chrono::Utc;
 
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::time::ChronoUtc;
 use tracing_subscriber::FmtSubscriber;
 
 pub struct Context {
+	server: Option<Server>,
+	client: Option<Client>,
 	messages: VecDeque<String>,
+	dir: PathBuf,
 }
 
 impl Context {
 	pub fn new(dir: &str) -> Option<Self> {
 		static LOG_PREFIX: &str = concat!(env!("CARGO_PKG_NAME"), "-");
 		static LOG_SUFFIX: &str = ".log";
+
+		fn setup_logging(dir: &Path) -> Result<()> {
+			let date = Utc::now().format("%FT%T%.3fZ");
+			let file_name = format!("{LOG_PREFIX}{date}{LOG_SUFFIX}");
+			let file = File::create(dir.join(file_name))?;
+
+			let subscriber = FmtSubscriber::builder()
+				.with_ansi(false)
+				.with_level(true)
+				.with_max_level(LevelFilter::TRACE)
+				.with_thread_names(true)
+				.with_timer(ChronoUtc::new("%TZ".into()))
+				.with_writer(file)
+				.finish();
+
+			tracing::subscriber::set_global_default(subscriber)?;
+
+			info!("logging initialised");
+
+			Ok(())
+		}
 
 		fn prune_logs(dir: &Path) -> Result<()> {
 			let max_age = Duration::from_secs(24 * 60 * 60);
@@ -50,27 +78,6 @@ impl Context {
 			Ok(())
 		}
 
-		fn setup_logging(dir: &Path) -> Result<()> {
-			let date = Utc::now().format("%FT%T%.3fZ");
-			let file_name = format!("{LOG_PREFIX}{date}{LOG_SUFFIX}");
-			let file = File::create(dir.join(file_name))?;
-
-			let subscriber = FmtSubscriber::builder()
-				.with_ansi(false)
-				.with_level(true)
-				.with_max_level(LevelFilter::TRACE)
-				.with_thread_names(true)
-				.with_timer(ChronoUtc::new("%TZ".into()))
-				.with_writer(file)
-				.finish();
-
-			tracing::subscriber::set_global_default(subscriber)?;
-
-			info!("logging initialised");
-
-			Ok(())
-		}
-
 		let logs_dir = Path::new(dir).join("log/");
 
 		if let Err(err) = std::fs::create_dir(&logs_dir) {
@@ -89,38 +96,144 @@ impl Context {
 
 	#[instrument(level = "trace")]
 	fn try_new(dir: &str) -> Result<Self> {
-		let mut this = Self {
+		Ok(Self {
+			server: None,
+			client: None,
 			messages: VecDeque::new(),
-		};
-
-		this.add_message("hello!".into());
-
-		Ok(this)
+			dir: dir.into(),
+		})
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn tick(&mut self) {
-		//
+		if let Some(server) = self.server.as_mut() {
+			if server.is_cancelled() {
+				debug!("disconnecting due to server cancellation");
+				self.disconnect();
+				self.add_message("disconnected".into());
+			}
+		}
+
+		if let Some(client) = self.client.as_mut() {
+			if let Err(err) = client.tick() {
+				warn!("{err}");
+				self.disconnect();
+			}
+		}
+	}
+
+	fn load_config(&mut self) -> Option<LocalConfig> {
+		LocalConfig::load(&self.dir)
+			.inspect_err(|err| {
+				error!("{err}");
+				self.add_message("failed to load config".into());
+			})
+			.ok()
+	}
+
+	fn create_server(
+		&mut self,
+		options: Option<ConnectOptions>,
+	) -> Option<Channel> {
+		match Server::new(options) {
+			Ok((server, channel)) => {
+				self.server = Some(server);
+				Some(channel)
+			},
+			Err(err) => {
+				warn!("(server) {err}");
+				self.add_message("failed to connect".into());
+				None
+			},
+		}
+	}
+
+	fn create_client(&mut self, channel: Channel) -> Option<()> {
+		match Client::new(channel) {
+			Ok(client) => {
+				self.client = Some(client);
+				Some(())
+			},
+			Err(err) => {
+				warn!("(client) {err}");
+				self.add_message("failed to connect".into());
+				self.disconnect();
+				None
+			},
+		}
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn connect_direct(&mut self, callsign: &str, controlling: bool) {
-		todo!()
+		if self.client.is_some() {
+			warn!("connection attempted whilst connected");
+			return
+		}
+
+		let Some(config) = self.load_config() else {
+			return
+		};
+
+		let Some(token) = config.token else {
+			self.add_message("unauthenticated".into());
+			return
+		};
+
+		let options = ConnectOptions {
+			token,
+			port: config.port,
+			callsign: callsign.into(),
+			controlling,
+		};
+
+		if let Some(channel) = self.create_server(Some(options)) {
+			self.create_client(channel);
+		}
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn connect_proxy(&mut self) {
-		todo!()
+		if self.client.is_some() {
+			warn!("connection attempted whilst connected");
+			return
+		}
+
+		let Some(config) = self.load_config() else {
+			return
+		};
+
+		match Channel::connect(config.port) {
+			Ok(channel) => {
+				self.create_client(channel);
+			},
+			Err(err) => {
+				warn!("(proxy channel) {err}");
+				self.add_message("failed to connect".into());
+			},
+		}
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn connect_local(&mut self) {
-		todo!()
+		if self.client.is_some() {
+			warn!("connection attempted whilst connected");
+			return
+		}
+
+		if let Some(channel) = self.create_server(None) {
+			self.create_client(channel);
+		}
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn disconnect(&mut self) {
-		todo!()
+		if let Some(server) = self.server.take() {
+			server.stop();
+		}
+
+		if let Some(client) = self.client.take() {
+			client.disconnect();
+		}
 	}
 
 	#[instrument(level = "trace", skip(self))]

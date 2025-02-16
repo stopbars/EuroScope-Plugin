@@ -1,7 +1,9 @@
 mod api;
+mod client;
+mod config;
 mod context;
-
-use context::Context;
+mod ipc;
+mod server;
 
 pub use api::*;
 
@@ -13,4 +15,11 @@ pub enum ConnectionState {
 	ConnectedProxy,
 	ConnectedLocal,
 	Poisoned,
+}
+
+#[repr(C)]
+pub enum ActivityState {
+	None,
+	Observing,
+	Controlling,
 }

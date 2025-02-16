@@ -1,6 +1,7 @@
 #![allow(private_interfaces)]
 
-use crate::{ConnectionState, Context as ContextImpl};
+use crate::context::Context as ContextImpl;
+use crate::ConnectionState;
 
 use std::ffi::{c_char, CStr, CString};
 
