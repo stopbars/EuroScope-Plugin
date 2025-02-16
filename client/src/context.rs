@@ -25,6 +25,7 @@ pub struct Context {
 	client: Option<Client>,
 	messages: VecDeque<String>,
 	dir: PathBuf,
+	state: ConnectionState,
 }
 
 impl Context {
@@ -101,6 +102,7 @@ impl Context {
 			client: None,
 			messages: VecDeque::new(),
 			dir: dir.into(),
+			state: ConnectionState::Disconnected,
 		})
 	}
 
@@ -111,6 +113,7 @@ impl Context {
 				debug!("disconnecting due to server cancellation");
 				self.disconnect();
 				self.add_message("disconnected".into());
+				self.state = ConnectionState::Poisoned;
 			}
 		}
 
@@ -118,6 +121,7 @@ impl Context {
 			if let Err(err) = client.tick() {
 				warn!("{err}");
 				self.disconnect();
+				self.state = ConnectionState::Poisoned;
 			}
 		}
 	}
@@ -167,6 +171,7 @@ impl Context {
 				warn!("(client) {err}");
 				self.add_message("failed to connect".into());
 				self.disconnect();
+				self.state = ConnectionState::Poisoned;
 				None
 			},
 		}
@@ -178,6 +183,8 @@ impl Context {
 			warn!("connection attempted whilst connected");
 			return
 		}
+
+		self.state = ConnectionState::Poisoned;
 
 		let Some(config) = self.load_config() else {
 			return
@@ -196,7 +203,9 @@ impl Context {
 		};
 
 		if let Some(channel) = self.create_server(Some(options)) {
-			self.create_client(channel);
+			if self.create_client(channel).is_some() {
+				self.state = ConnectionState::ConnectedDirect;
+			}
 		}
 	}
 
@@ -207,13 +216,17 @@ impl Context {
 			return
 		}
 
+		self.state = ConnectionState::Poisoned;
+
 		let Some(config) = self.load_config() else {
 			return
 		};
 
 		match Channel::connect(config.port) {
 			Ok(channel) => {
-				self.create_client(channel);
+				if self.create_client(channel).is_some() {
+					self.state = ConnectionState::ConnectedProxy;
+				}
 			},
 			Err(err) => {
 				warn!("(proxy channel) {err}");
@@ -229,13 +242,19 @@ impl Context {
 			return
 		}
 
+		self.state = ConnectionState::Poisoned;
+
 		if let Some(channel) = self.create_server(None) {
-			self.create_client(channel);
+			if self.create_client(channel).is_some() {
+				self.state = ConnectionState::ConnectedLocal;
+			}
 		}
 	}
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn disconnect(&mut self) {
+		self.state = ConnectionState::Disconnected;
+
 		if let Some(server) = self.server.take() {
 			server.stop();
 		}
@@ -247,7 +266,7 @@ impl Context {
 
 	#[instrument(level = "trace", skip(self))]
 	pub fn connection_state(&self) -> ConnectionState {
-		todo!()
+		self.state
 	}
 
 	#[instrument(level = "trace", skip(self))]
