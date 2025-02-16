@@ -14,6 +14,25 @@ struct Context {
 struct Screen {
 	screen: ScreenImpl<'static>,
 	string: Option<CString>,
+	strings: Vec<CString>,
+	string_ptrs: Vec<*const c_char>,
+}
+
+impl Screen {
+	fn load_strings(&mut self, strings: Vec<String>) -> *const *const c_char {
+		self.strings.clear();
+		self.string_ptrs.clear();
+
+		for string in strings {
+			let string = unsafe { CString::from_vec_unchecked(string.into_bytes()) };
+			self.string_ptrs.push(string.as_ptr());
+			self.strings.push(string);
+		}
+
+		self.string_ptrs.push(std::ptr::null());
+
+		self.string_ptrs.as_ptr()
+	}
 }
 
 #[no_mangle]
@@ -93,6 +112,8 @@ pub extern "C" fn client_create_screen(
 	Box::leak(Box::new(Screen {
 		screen: ctx.ctx.create_screen(geo),
 		string: None,
+		strings: Vec::new(),
+		string_ptrs: Vec::new(),
 	}))
 }
 
@@ -141,4 +162,62 @@ pub extern "C" fn client_set_activity(
 	state: ActivityState,
 ) {
 	screen.screen.set_state(state);
+}
+
+#[no_mangle]
+pub extern "C" fn client_get_profiles(
+	screen: &mut Screen,
+) -> *const *const c_char {
+	screen.load_strings(screen.screen.profiles())
+}
+
+#[no_mangle]
+pub extern "C" fn client_get_profile(screen: &mut Screen) -> usize {
+	screen.screen.profile()
+}
+
+#[no_mangle]
+pub extern "C" fn client_set_profile(screen: &mut Screen, i: usize) {
+	screen.screen.set_profile(i);
+}
+
+#[no_mangle]
+pub extern "C" fn client_get_presets(
+	screen: &mut Screen,
+) -> *const *const c_char {
+	screen.load_strings(screen.screen.presets())
+}
+
+#[no_mangle]
+pub extern "C" fn client_apply_preset(screen: &mut Screen, i: usize) {
+	screen.screen.apply_preset(i);
+}
+
+#[no_mangle]
+pub extern "C" fn client_get_views(
+	screen: &mut Screen,
+) -> *const *const c_char {
+	screen.load_strings(screen.screen.views())
+}
+
+#[no_mangle]
+pub extern "C" fn client_get_view(screen: &mut Screen) -> usize {
+	screen.screen.view()
+}
+
+#[no_mangle]
+pub extern "C" fn client_set_view(screen: &mut Screen, i: usize) {
+	screen.screen.set_view(i);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn client_is_pilot_enabled(
+	screen: &mut Screen,
+	callsign: *const c_char,
+) -> bool {
+	let Ok(callsign) = CStr::from_ptr(callsign).to_str() else {
+		return false
+	};
+
+	screen.screen.is_pilot_enabled(callsign)
 }

@@ -14,11 +14,7 @@ use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum NodeState {
-	Off,
-	On,
-}
+pub type NodeState = bool;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum BlockState {

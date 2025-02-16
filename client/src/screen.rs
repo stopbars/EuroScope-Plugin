@@ -1,3 +1,4 @@
+use crate::client::Aerodrome;
 use crate::context::Context;
 use crate::ActivityState;
 
@@ -6,7 +7,7 @@ use tracing::warn;
 pub struct Screen<'a> {
 	context: &'a mut Context,
 	icao: Option<String>,
-	geo: bool,
+	view: Option<usize>,
 }
 
 impl<'a> Screen<'a> {
@@ -14,8 +15,26 @@ impl<'a> Screen<'a> {
 		Self {
 			context,
 			icao: None,
-			geo,
+			view: (!geo).then_some(0),
 		}
+	}
+
+	fn data(&self) -> Option<&Aerodrome> {
+		self.icao.as_ref().and_then(|icao| {
+			self
+				.context
+				.client()
+				.and_then(|client| client.aerodrome(icao))
+		})
+	}
+
+	fn data_mut(&mut self) -> Option<&mut Aerodrome> {
+		self.icao.as_ref().and_then(|icao| {
+			self
+				.context
+				.client_mut()
+				.and_then(|client| client.aerodrome_mut(icao))
+		})
 	}
 
 	pub fn aerodrome(&self) -> Option<&str> {
@@ -35,15 +54,8 @@ impl<'a> Screen<'a> {
 
 	pub fn state(&self) -> ActivityState {
 		self
-			.icao
-			.as_ref()
-			.and_then(|icao| {
-				self
-					.context
-					.client()
-					.and_then(|client| client.aerodrome(icao))
-					.map(|aerodrome| aerodrome.state())
-			})
+			.data()
+			.map(|aerodrome| aerodrome.state())
 			.unwrap_or(ActivityState::None)
 	}
 
@@ -57,6 +69,81 @@ impl<'a> Screen<'a> {
 				warn!("failed to set state: {err}");
 			}
 		}
+	}
+
+	pub fn profiles(&self) -> Vec<String> {
+		self
+			.data()
+			.map(|aerodrome| {
+				aerodrome
+					.config()
+					.profiles
+					.iter()
+					.map(|profile| profile.name.clone())
+					.collect()
+			})
+			.unwrap_or(Vec::new())
+	}
+
+	pub fn profile(&self) -> usize {
+		self
+			.data()
+			.map(|aerodrome| aerodrome.profile())
+			.unwrap_or(0)
+	}
+
+	pub fn set_profile(&mut self, i: usize) {
+		self.data_mut().map(|aerodrome| aerodrome.set_profile(i));
+	}
+
+	pub fn presets(&self) -> Vec<String> {
+		self
+			.data()
+			.map(|aerodrome| {
+				aerodrome.config().profiles[aerodrome.profile()]
+					.presets
+					.iter()
+					.map(|preset| preset.name.clone())
+					.collect()
+			})
+			.unwrap_or(Vec::new())
+	}
+
+	// bug: if profile changes between preset() and apply_preset(...), wrong
+	// preset will be applied
+	pub fn apply_preset(&mut self, i: usize) {
+		self.data_mut().map(|aerodrome| aerodrome.apply_preset(i));
+	}
+
+	pub fn views(&self) -> Vec<String> {
+		self
+			.data()
+			.map(|aerodrome| {
+				aerodrome
+					.config()
+					.views
+					.iter()
+					.map(|view| view.name.clone())
+					.collect()
+			})
+			.unwrap_or(Vec::new())
+	}
+
+	pub fn view(&self) -> usize {
+		self.view.unwrap_or(0)
+	}
+
+	pub fn set_view(&mut self, i: usize) {
+		if let Some(view) = self.view.as_mut() {
+			*view = i;
+		}
+	}
+
+	pub fn is_pilot_enabled(&self, callsign: &str) -> bool {
+		self
+			.data()
+			.map(|aerodrome| aerodrome.is_pilot_enabled(callsign))
+			.unwrap_or(false)
 	}
 }
 
