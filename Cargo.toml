@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
 	"client/",
-	"config/",
+	"shared/config/",
 	"tool/confc/",
 ]
 
@@ -13,7 +13,7 @@ publish = false
 repository = "https://github.com/19wintersp/bars"
 
 [workspace.dependencies]
-bars-config = { path = "config/" }
+bars-config = { path = "shared/config/" }
 anyhow = "1.0"
 bincode = "1.3"
 cbindgen = "0.28"
