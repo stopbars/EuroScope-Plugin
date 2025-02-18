@@ -3,6 +3,7 @@ resolver = "2"
 members = [
 	"client/",
 	"shared/config/",
+	"shared/protocol/",
 	"tool/confc/",
 ]
 
