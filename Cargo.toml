@@ -5,6 +5,7 @@ members = [
 	"shared/config/",
 	"shared/protocol/",
 	"tool/confc/",
+	"tool/server/",
 ]
 
 [workspace.package]
@@ -15,6 +16,7 @@ repository = "https://github.com/19wintersp/bars"
 
 [workspace.dependencies]
 bars-config = { path = "shared/config/" }
+bars-protocol = { path = "shared/protocol/" }
 anyhow = "1.0"
 bincode = "1.3"
 cbindgen = "0.28"
