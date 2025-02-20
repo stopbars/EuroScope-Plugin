@@ -298,6 +298,14 @@ impl Context {
 	}
 
 	pub fn track_aerodrome(&mut self, icao: String) {
+		if let Some(client) = self.client.as_mut() {
+			if !self.tracked.contains(&icao) {
+				if let Err(err) = client.set_tracking(icao.clone(), true) {
+					warn!("failed to track aerodrome: {err}");
+				}
+			}
+		}
+
 		self.tracked.push(icao);
 	}
 
@@ -305,8 +313,8 @@ impl Context {
 		if let Some(i) = self.tracked.iter().position(|s| s == icao) {
 			self.tracked.swap_remove(i);
 
-			if !self.tracked.contains(icao) {
-				if let Some(client) = self.client.as_mut() {
+			if let Some(client) = self.client.as_mut() {
+				if !self.tracked.contains(icao) {
 					if let Err(err) = client.set_tracking(icao.clone(), false) {
 						warn!("failed to untrack aerodrome: {err}");
 					}

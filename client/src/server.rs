@@ -306,7 +306,9 @@ impl Worker {
 					let mut tracked = tracked.lock().await;
 
 					if *track {
-						tracked.insert(icao.clone());
+						if !tracked.insert(icao.clone()) {
+							continue
+						}
 
 						let aerodromes = self.aerodromes.lock().await;
 						if let Some(aerodrome) = aerodromes.get(icao) {
@@ -327,7 +329,9 @@ impl Worker {
 							}
 						}
 					} else {
-						tracked.remove(icao);
+						if !tracked.remove(icao) {
+							continue
+						}
 					}
 				},
 				_ => (),
