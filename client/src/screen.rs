@@ -2,18 +2,22 @@ use crate::client::Aerodrome;
 use crate::context::Context;
 use crate::ActivityState;
 
-#[cfg(windows)]
 use crate::{ViewportGeo, ViewportNonGeo};
+
+use bars_config::{Geo, GeoPoint, Point};
 
 use tracing::warn;
 
 #[cfg(windows)]
-use windows::Win32::Graphics::Gdi::HDC;
+use windows::Win32::Foundation::POINT;
+#[cfg(windows)]
+use windows::Win32::Graphics::Gdi::{self, HDC};
 
 pub struct Screen<'a> {
 	context: &'a mut Context,
 	icao: Option<String>,
 	view: Option<usize>,
+	transform: Transform,
 }
 
 impl<'a> Screen<'a> {
@@ -22,6 +26,7 @@ impl<'a> Screen<'a> {
 			context,
 			icao: None,
 			view: (!geo).then_some(0),
+			transform: Transform::new(),
 		}
 	}
 
@@ -155,22 +160,38 @@ impl<'a> Screen<'a> {
 	}
 
 	#[cfg(windows)]
-	pub fn draw_background_geo(&mut self, _hdc: HDC, _viewport: ViewportGeo) {
-		todo!()
+	pub fn draw_background_geo(&mut self, hdc: HDC, viewport: ViewportGeo) {
+		self.transform = Transform::new_geo(viewport);
+
+		let Some(aerodrome) = self.data() else { return };
+
+		//
 	}
 
 	#[cfg(windows)]
 	pub fn draw_background_non_geo(
 		&mut self,
-		_hdc: HDC,
-		_viewport: ViewportNonGeo,
+		hdc: HDC,
+		viewport: ViewportNonGeo,
 	) {
-		todo!()
+		if let Some(view) = self
+			.data()
+			.and_then(|data| data.config().views.get(self.view.unwrap()))
+		{
+			self.transform = Transform::new_view(viewport, view.bounds);
+		}
+
+		let Some(aerodrome) = self.data() else { return };
+		let Some(view) = aerodrome.config().views.get(self.view.unwrap()) else {
+			return
+		};
+
+		//
 	}
 
 	#[cfg(windows)]
 	pub fn draw_foreground(&mut self, _hdc: HDC) {
-		todo!()
+		//
 	}
 }
 
@@ -179,5 +200,76 @@ impl<'a> Drop for Screen<'a> {
 		if let Some(icao) = &self.icao {
 			self.context.untrack_aerodrome(icao);
 		}
+	}
+}
+
+#[derive(Default)]
+struct Transform(f64, f64, f64, f64, f64, f64);
+
+impl Transform {
+	fn new() -> Self {
+		Self::default()
+	}
+
+	fn new_geo(viewport: ViewportGeo) -> Self {
+		let sin = viewport.rotation.sin();
+		let cos = viewport.rotation.cos();
+
+		let klat = -viewport.scaling[0] * viewport.origin[0];
+		let klon = -viewport.scaling[1] * viewport.origin[1];
+
+		Self(
+			viewport.scaling[0] * cos,
+			viewport.scaling[1] * sin,
+			klon * sin + klat * cos,
+			viewport.scaling[0] * -sin,
+			viewport.scaling[1] * cos,
+			klon * cos - klat * sin,
+		)
+	}
+
+	fn new_view(viewport: ViewportNonGeo, bounds: bars_config::Box) -> Self {
+		let bounds_w = (bounds.max.x - bounds.min.x) as f64;
+		let bounds_h = (bounds.max.y - bounds.min.y) as f64;
+
+		let viewport_ratio = viewport.size[0] / viewport.size[1];
+		let bounds_ratio = bounds_w / bounds_h;
+
+		let (scale, offset_x, offset_y) = if bounds_ratio > viewport_ratio {
+			let scale = viewport.size[0] / bounds_w;
+			(scale, 0.0, (viewport.size[1] - bounds_h * scale) * 0.5)
+		} else {
+			let scale = viewport.size[1] / bounds_h;
+			(scale, (viewport.size[0] - bounds_w * scale) * 0.5, 0.0)
+		};
+
+		Self(
+			scale,
+			0.0,
+			scale * -bounds.min.x as f64 + offset_x,
+			0.0,
+			scale,
+			scale * -bounds.min.y as f64 + offset_y,
+		)
+	}
+
+	fn transform(&self, (x, y): (f64, f64)) -> (f64, f64) {
+		(
+			x * self.0 + y * self.1 + self.2,
+			x * self.3 + y * self.4 + self.5,
+		)
+	}
+
+	fn transform_geo(&self, geo: &Geo) -> (f64, f64) {
+		self.transform((geo.lat as f64, geo.lon as f64))
+	}
+
+	fn transform_geo_point(&self, gp: &GeoPoint) -> (f64, f64) {
+		let (x, y) = self.transform_geo(&gp.geo);
+		(x + gp.offset.x as f64, y + gp.offset.y as f64)
+	}
+
+	fn transform_point(&self, point: &Point) -> (f64, f64) {
+		self.transform((point.x as f64, point.y as f64))
 	}
 }
