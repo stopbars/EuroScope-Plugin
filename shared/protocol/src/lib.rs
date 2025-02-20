@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 pub type NodeState = bool;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(
+	Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockState {
 	Clear,
@@ -12,7 +14,7 @@ pub enum BlockState {
 	Route((String, String)),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Aerodrome {
 	pub profile: String,
 	pub nodes: HashMap<String, NodeState>,
@@ -21,6 +23,15 @@ pub struct Aerodrome {
 }
 
 impl Aerodrome {
+	pub fn new(profile: String) -> Self {
+		Self {
+			profile,
+			nodes: HashMap::new(),
+			blocks: HashMap::new(),
+			patch: None,
+		}
+	}
+
 	fn patch(&mut self) -> &mut Patch {
 		self.patch.get_or_insert_default()
 	}
@@ -54,11 +65,26 @@ impl Aerodrome {
 	}
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Patch {
-	profile: Option<String>,
-	nodes: HashMap<String, NodeState>,
-	blocks: HashMap<String, BlockState>,
+	pub profile: Option<String>,
+	pub nodes: HashMap<String, NodeState>,
+	pub blocks: HashMap<String, BlockState>,
+}
+
+impl Patch {
+	pub fn apply_patch(&mut self, patch: Patch) {
+		if let Some(profile) = patch.profile {
+			self.profile = Some(profile);
+		}
+
+		self.nodes.extend(patch.nodes.into_iter());
+		self.blocks.extend(patch.blocks.into_iter());
+	}
+
+	pub fn is_empty(&self) -> bool {
+		self.profile.is_none() && self.nodes.is_empty() && self.blocks.is_empty()
+	}
 }
 
 impl Default for Patch {
