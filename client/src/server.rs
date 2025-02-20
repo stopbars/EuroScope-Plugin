@@ -1,13 +1,12 @@
 use crate::config::ConfigMapping;
-use crate::ipc::{
-	BlockState, Channel, Downstream, NodeState, ServerChannel, Upstream,
-};
-use crate::ActivityState;
+use crate::ipc::{Channel, Downstream, ServerChannel, Upstream};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
+
+use bars_protocol::Patch;
 
 use anyhow::Result;
 
@@ -92,10 +91,9 @@ impl Server {
 
 struct Aerodrome {
 	config: Option<bars_config::Aerodrome>,
-	state: ActivityState,
-	profile: Option<String>,
-	nodes: HashMap<String, NodeState>,
-	blocks: HashMap<String, BlockState>,
+	controlling: bool,
+	trackers: usize,
+	state: Patch,
 }
 
 #[derive(Clone)]
@@ -191,11 +189,8 @@ impl Worker {
 		tokio::spawn(async move {
 			while let Some(message) = rx.recv().await {
 				match message {
-					Upstream::Activity {
-						icao,
-						state: mut activity_state,
-					} => {
-						debug!("updating activity for {icao}");
+					Upstream::Track { icao, track } => {
+						debug!("updating tracking for {icao}");
 
 						let mut aerodromes = state.aerodromes.lock().await;
 						let aerodrome =
@@ -210,61 +205,48 @@ impl Worker {
 
 								Aerodrome {
 									config: None,
-									state: ActivityState::None,
-									profile: None,
-									nodes: HashMap::new(),
-									blocks: HashMap::new(),
+									state: Default::default(),
+									controlling: false,
+									trackers: 0,
 								}
 							});
 
-						if aerodrome.state == ActivityState::None
-							&& activity_state == ActivityState::None
-						{
-							activity_state = ActivityState::Observing;
-						}
+						if track {
+							aerodrome.trackers += 1;
+						} else if aerodrome.trackers > 0 {
+							aerodrome.trackers -= 1;
 
-						if aerodrome.state != activity_state {
-							aerodrome.state = activity_state;
-							state
-								.broadcast(Downstream::Activity {
-									icao,
-									state: aerodrome.state,
-								})
-								.await;
+							if aerodrome.trackers == 0 && aerodrome.controlling {
+								debug!("{icao} refcount zero, dropping control");
+								aerodrome.controlling = false;
+							}
 						}
 					},
-					Upstream::Profile { icao, profile } => {
+					Upstream::Control { icao, control } => {
+						debug!("updating controlling for {icao}");
+
 						let mut aerodromes = state.aerodromes.lock().await;
 						if let Some(aerodrome) = aerodromes.get_mut(&icao) {
-							state
-								.broadcast(Downstream::Profile {
-									icao: icao.clone(),
-									profile: profile.clone(),
-								})
-								.await;
+							aerodrome.controlling = control;
 
-							aerodrome.profile = Some(profile);
-						} else {
-							warn!("client profile update to inactive aerodrome {icao}");
+							state.broadcast(Downstream::Control { icao, control }).await;
 						}
 					},
-					Upstream::State {
-						icao,
-						nodes,
-						blocks,
-					} => {
+					Upstream::Patch { icao, patch } => {
 						let mut aerodromes = state.aerodromes.lock().await;
 						if let Some(aerodrome) = aerodromes.get_mut(&icao) {
-							state
-								.broadcast(Downstream::State {
-									icao: icao.clone(),
-									nodes: nodes.clone(),
-									blocks: blocks.clone(),
-								})
-								.await;
+							if aerodrome.controlling {
+								state
+									.broadcast(Downstream::Patch {
+										icao,
+										patch: patch.clone(),
+									})
+									.await;
 
-							aerodrome.nodes.extend(nodes.into_iter());
-							aerodrome.blocks.extend(blocks.into_iter());
+								aerodrome.state.apply_patch(patch);
+							} else {
+								warn!("client state update to non-controlled aerodrome {icao}");
+							}
 						} else {
 							warn!("client state update to inactive aerodrome {icao}");
 						}
@@ -286,8 +268,17 @@ impl Worker {
 			self.clients.lock().await.push(tx_tx.clone());
 		}
 
+		let tracked = Arc::new(Mutex::new(HashSet::new()));
+		let tracked2 = tracked.clone();
+
 		tokio::spawn(async move {
 			while let Some(message) = tx_rx.recv().await {
+				let tracked = tracked2.lock().await;
+
+				if !tracked.contains(message.icao()) {
+					continue
+				}
+
 				if let Err(err) = tx.send(message).await {
 					debug!("{err}");
 					break
@@ -296,40 +287,53 @@ impl Worker {
 		});
 
 		loop {
-			match rx.recv().await? {
-				Upstream::Init => {
-					for (icao, aerodrome) in self.aerodromes.lock().await.iter() {
-						let _ = tx_tx.send(Downstream::Activity {
-							icao: icao.clone(),
-							state: aerodrome.state,
-						});
+			let message = match rx.recv().await {
+				Ok(message) => message,
+				Err(err) => {
+					let mut tracked = tracked.lock().await;
 
-						if let Some(config) = &aerodrome.config {
-							let _ = tx_tx.send(Downstream::Config {
-								data: config.clone(),
-							});
-						}
+					for icao in tracked.drain() {
+						let _ = self.upstreams.send(Upstream::Track { icao, track: false });
+					}
 
-						if let Some(profile) = &aerodrome.profile {
-							let _ = tx_tx.send(Downstream::Profile {
-								icao: icao.clone(),
-								profile: profile.clone(),
-							});
-						}
+					return Err(err)
+				},
+			};
 
-						if !aerodrome.nodes.is_empty() || !aerodrome.blocks.is_empty() {
-							let _ = tx_tx.send(Downstream::State {
-								icao: icao.clone(),
-								nodes: aerodrome.nodes.clone(),
-								blocks: aerodrome.blocks.clone(),
-							});
+			match &message {
+				Upstream::Init => continue,
+				Upstream::Track { icao, track } => {
+					let mut tracked = tracked.lock().await;
+
+					if *track {
+						tracked.insert(icao.clone());
+
+						let aerodromes = self.aerodromes.lock().await;
+						if let Some(aerodrome) = aerodromes.get(icao) {
+							if let Some(config) = &aerodrome.config {
+								tx_tx.send(Downstream::Config {
+									data: config.clone(),
+								})?;
+
+								tx_tx.send(Downstream::Control {
+									icao: icao.clone(),
+									control: aerodrome.controlling,
+								})?;
+
+								tx_tx.send(Downstream::Patch {
+									icao: icao.clone(),
+									patch: aerodrome.state.clone(),
+								})?;
+							}
 						}
+					} else {
+						tracked.remove(icao);
 					}
 				},
-				message => {
-					let _ = self.upstreams.send(message);
-				},
+				_ => (),
 			}
+
+			let _ = self.upstreams.send(message);
 		}
 	}
 
@@ -401,6 +405,20 @@ impl Worker {
 		let mut aerodromes = self.aerodromes.lock().await;
 		if let Some(entry) = aerodromes.get_mut(icao) {
 			entry.config = Some(aerodrome);
+
+			self
+				.broadcast(Downstream::Control {
+					icao: icao.clone(),
+					control: entry.controlling,
+				})
+				.await;
+
+			self
+				.broadcast(Downstream::Patch {
+					icao: icao.clone(),
+					patch: entry.state.clone(),
+				})
+				.await;
 		}
 
 		Ok(())

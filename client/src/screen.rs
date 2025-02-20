@@ -65,7 +65,9 @@ impl<'a> Screen<'a> {
 		}
 
 		if let Some((c, icao)) = self.context.client_mut().zip(self.icao.as_ref()) {
-			if let Err(err) = c.set_activity(icao.clone(), state) {
+			if let Err(err) =
+				c.set_controlling(icao.clone(), state == ActivityState::Controlling)
+			{
 				warn!("failed to set state: {err}");
 			}
 		}

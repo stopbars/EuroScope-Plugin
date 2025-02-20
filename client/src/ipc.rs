@@ -1,8 +1,8 @@
-use crate::ActivityState;
-
 use std::collections::HashMap;
 use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, TcpStream};
+
+use bars_protocol::Patch;
 
 use anyhow::{bail, Result};
 
@@ -14,59 +14,44 @@ use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
-pub type NodeState = bool;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum BlockState {
-	Clear,
-	Relax,
-	Route((String, String)),
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Upstream {
 	Init,
-	Activity {
+	Track {
 		icao: String,
-		state: ActivityState,
+		track: bool,
 	},
-	Profile {
+	Control {
 		icao: String,
-		profile: String,
+		control: bool,
 	},
-	State {
+	Patch {
 		icao: String,
-		nodes: HashMap<String, NodeState>,
-		blocks: HashMap<String, BlockState>,
+		patch: Patch,
 	},
 	Scenery {
 		icao: String,
-		elements: HashMap<String, bool>,
+		scenery: HashMap<String, bool>,
 	},
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Downstream {
-	Config {
-		data: bars_config::Aerodrome,
-	},
-	Activity {
-		icao: String,
-		state: ActivityState,
-	},
-	Profile {
-		icao: String,
-		profile: String,
-	},
-	State {
-		icao: String,
-		nodes: HashMap<String, NodeState>,
-		blocks: HashMap<String, BlockState>,
-	},
-	Aircraft {
-		icao: String,
-		aircraft: Vec<String>,
-	},
+	Config { data: bars_config::Aerodrome },
+	Control { icao: String, control: bool },
+	Patch { icao: String, patch: Patch },
+	Aircraft { icao: String, aircraft: Vec<String> },
+}
+
+impl Downstream {
+	pub fn icao(&self) -> &String {
+		match self {
+			Self::Config { data } => &data.icao,
+			Self::Control { icao, .. } => icao,
+			Self::Patch { icao, .. } => icao,
+			Self::Aircraft { icao, .. } => icao,
+		}
+	}
 }
 
 pub enum Channel {

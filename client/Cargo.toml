@@ -12,6 +12,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 bars-config.workspace = true
+bars-protocol.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 chrono.workspace = true

@@ -1,9 +1,15 @@
-use crate::ipc::{BlockState, Channel, Downstream, NodeState, Upstream};
+use crate::ipc::{Channel, Downstream, Upstream};
 use crate::ActivityState;
 
 use std::collections::{HashMap, HashSet};
 
+use bars_config::BlockState;
+
+use bars_protocol::{BlockState as IpcBlockState, Patch};
+
 use anyhow::Result;
+
+use tracing::warn;
 
 pub struct Client {
 	channel: Channel,
@@ -30,23 +36,18 @@ impl Client {
 						.aerodromes
 						.insert(data.icao.clone(), Aerodrome::new(data));
 				},
-				Downstream::Activity { icao, state } => {
+				Downstream::Control { icao, control } => {
 					if let Some(aerodrome) = self.aerodromes.get_mut(&icao) {
-						aerodrome.state = state;
+						aerodrome.state = if control {
+							ActivityState::Controlling
+						} else {
+							ActivityState::Observing
+						};
 					}
 				},
-				Downstream::Profile { icao, profile } => {
+				Downstream::Patch { icao, patch } => {
 					if let Some(aerodrome) = self.aerodromes.get_mut(&icao) {
-						aerodrome.update_profile(profile);
-					}
-				},
-				Downstream::State {
-					icao,
-					nodes,
-					blocks,
-				} => {
-					if let Some(aerodrome) = self.aerodromes.get_mut(&icao) {
-						aerodrome.update_state(nodes, blocks);
+						aerodrome.apply_patch(patch);
 					}
 				},
 				Downstream::Aircraft { icao, aircraft } => {
@@ -57,21 +58,42 @@ impl Client {
 			}
 		}
 
-		for (_, aerodrome) in &mut self.aerodromes {
-			for message in aerodrome.pending() {
-				self.channel.send(message)?;
+		for (icao, aerodrome) in &mut self.aerodromes {
+			let patch = std::mem::take(&mut aerodrome.pending_patch);
+			if !patch.is_empty() {
+				self.channel.send(Upstream::Patch {
+					icao: icao.clone(),
+					patch,
+				})?;
+			}
+
+			let scenery = std::mem::take(&mut aerodrome.pending_scenery);
+			if !scenery.is_empty() {
+				self.channel.send(Upstream::Scenery {
+					icao: icao.clone(),
+					scenery,
+				})?;
 			}
 		}
 
 		Ok(())
 	}
 
-	pub fn set_activity(
-		&mut self,
-		icao: String,
-		state: ActivityState,
-	) -> Result<()> {
-		self.channel.send(Upstream::Activity { icao, state })
+	pub fn set_tracking(&mut self, icao: String, track: bool) -> Result<()> {
+		if !track {
+			self.aerodromes.remove(&icao);
+		}
+
+		self.channel.send(Upstream::Track { icao, track })
+	}
+
+	pub fn set_controlling(&mut self, icao: String, control: bool) -> Result<()> {
+		if self.aerodromes.contains_key(&icao) {
+			self.channel.send(Upstream::Control { icao, control })
+		} else {
+			warn!("attempted to un/control untracked aerodrome");
+			Ok(())
+		}
 	}
 
 	pub fn aerodrome(&self, icao: &String) -> Option<&Aerodrome> {
@@ -84,8 +106,6 @@ impl Client {
 }
 
 pub struct Aerodrome {
-	pending: Vec<Upstream>,
-
 	config: bars_config::Aerodrome,
 	state: ActivityState,
 
@@ -95,9 +115,12 @@ pub struct Aerodrome {
 	block_ids: HashMap<String, usize>,
 
 	nodes: Vec<State<bool>>,
-	blocks: Vec<State<bars_config::BlockState>>,
+	blocks: Vec<State<BlockState>>,
 
 	aircraft: HashSet<String>,
+
+	pending_patch: Patch,
+	pending_scenery: HashMap<String, bool>,
 }
 
 #[derive(Clone)]
@@ -109,7 +132,6 @@ struct State<T> {
 impl Aerodrome {
 	fn new(config: bars_config::Aerodrome) -> Self {
 		let mut this = Self {
-			pending: Vec::new(),
 			config,
 			state: ActivityState::None,
 			profile: 0,
@@ -118,6 +140,8 @@ impl Aerodrome {
 			nodes: Vec::new(),
 			blocks: Vec::new(),
 			aircraft: HashSet::new(),
+			pending_patch: Default::default(),
+			pending_scenery: HashMap::new(),
 		};
 
 		for (i, node) in this.config.nodes.iter().enumerate() {
@@ -132,54 +156,45 @@ impl Aerodrome {
 		this
 	}
 
-	fn update_profile(&mut self, profile: String) {
-		if let Some(i) = self.config.profiles.iter().position(|p| p.id == profile) {
-			self.profile = i;
-		}
-	}
-
-	fn pending(&mut self) -> Vec<Upstream> {
-		std::mem::take(&mut self.pending)
-	}
-
-	fn bs_ipc_to_conf(
-		&self,
-		state: BlockState,
-	) -> Option<bars_config::BlockState> {
+	fn bs_ipc_to_conf(&self, state: IpcBlockState) -> Option<BlockState> {
 		Some(match state {
-			BlockState::Clear => bars_config::BlockState::Clear,
-			BlockState::Relax => bars_config::BlockState::Relax,
-			BlockState::Route((a, b)) => bars_config::BlockState::Route((
-				*self.node_ids.get(&a)?,
-				*self.node_ids.get(&b)?,
-			)),
+			IpcBlockState::Clear => BlockState::Clear,
+			IpcBlockState::Relax => BlockState::Relax,
+			IpcBlockState::Route((a, b)) => {
+				BlockState::Route((*self.node_ids.get(&a)?, *self.node_ids.get(&b)?))
+			},
 		})
 	}
 
-	fn bs_conf_to_ipc(&self, state: &bars_config::BlockState) -> BlockState {
+	fn bs_conf_to_ipc(&self, state: &BlockState) -> IpcBlockState {
 		match state {
-			bars_config::BlockState::Clear => BlockState::Clear,
-			bars_config::BlockState::Relax => BlockState::Relax,
-			bars_config::BlockState::Route((a, b)) => BlockState::Route((
+			BlockState::Clear => IpcBlockState::Clear,
+			BlockState::Relax => IpcBlockState::Relax,
+			BlockState::Route((a, b)) => IpcBlockState::Route((
 				self.config.nodes[*a].id.clone(),
 				self.config.nodes[*b].id.clone(),
 			)),
 		}
 	}
 
-	fn update_state(
-		&mut self,
-		nodes: HashMap<String, NodeState>,
-		blocks: HashMap<String, BlockState>,
-	) {
-		for (id, state) in nodes {
+	fn apply_patch(&mut self, patch: Patch) {
+		if let Some(profile) = patch.profile {
+			if let Some(i) = self.config.profiles.iter().position(|p| p.id == profile)
+			{
+				self.profile = i;
+			} else {
+				warn!("requested to set unknown profile");
+			}
+		}
+
+		for (id, state) in patch.nodes {
 			if let Some(i) = self.node_ids.get(&id).copied() {
 				self.nodes[i].current = state;
 				self.nodes[i].pending = None;
 			}
 		}
 
-		for (id, state) in blocks {
+		for (id, state) in patch.blocks {
 			if let Some(i) = self.block_ids.get(&id).copied() {
 				let Some(state) = self.bs_ipc_to_conf(state) else {
 					continue
@@ -205,11 +220,7 @@ impl Aerodrome {
 		}
 
 		self.profile = i;
-
-		self.pending.push(Upstream::Profile {
-			icao: self.config.icao.clone(),
-			profile: self.config.profiles[i].id.clone(),
-		});
+		self.pending_patch.profile = Some(self.config.profiles[i].id.clone());
 	}
 
 	pub fn apply_preset(&mut self, i: usize) {
@@ -234,11 +245,8 @@ impl Aerodrome {
 			);
 		}
 
-		self.pending.push(Upstream::State {
-			icao: self.config.icao.clone(),
-			nodes,
-			blocks,
-		});
+		self.pending_patch.nodes = nodes;
+		self.pending_patch.blocks = blocks;
 	}
 
 	pub fn config(&self) -> &bars_config::Aerodrome {

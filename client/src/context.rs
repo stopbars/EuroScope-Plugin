@@ -3,7 +3,7 @@ use crate::config::{ConfigMapping, LocalConfig};
 use crate::ipc::Channel;
 use crate::screen::Screen;
 use crate::server::{ConnectOptions, Server};
-use crate::{ActivityState, ConnectionState};
+use crate::ConnectionState;
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -168,7 +168,7 @@ impl Context {
 		match Client::new(channel) {
 			Ok(mut client) => {
 				for tracked in &self.tracked {
-					let _ = client.set_activity(tracked.clone(), ActivityState::None);
+					let _ = client.set_tracking(tracked.clone(), true);
 				}
 
 				self.client = Some(client);
@@ -304,6 +304,14 @@ impl Context {
 	pub fn untrack_aerodrome(&mut self, icao: &String) {
 		if let Some(i) = self.tracked.iter().position(|s| s == icao) {
 			self.tracked.swap_remove(i);
+
+			if !self.tracked.contains(icao) {
+				if let Some(client) = self.client.as_mut() {
+					if let Err(err) = client.set_tracking(icao.clone(), false) {
+						warn!("failed to untrack aerodrome: {err}");
+					}
+				}
+			}
 		}
 	}
 }
