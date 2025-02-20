@@ -4,7 +4,13 @@ use crate::context::Context as ContextImpl;
 use crate::screen::Screen as ScreenImpl;
 use crate::{ActivityState, ConnectionState};
 
+#[cfg(windows)]
+use crate::{ViewportGeo, ViewportNonGeo};
+
 use std::ffi::{c_char, CStr, CString};
+
+#[cfg(windows)]
+use windows::Win32::Graphics::Gdi::HDC;
 
 struct Context {
 	ctx: ContextImpl,
@@ -13,6 +19,8 @@ struct Context {
 
 struct Screen {
 	screen: ScreenImpl<'static>,
+	#[cfg(windows)]
+	geo: bool,
 	string: Option<CString>,
 	strings: Vec<CString>,
 	string_ptrs: Vec<*const c_char>,
@@ -111,6 +119,8 @@ pub extern "C" fn client_create_screen(
 ) -> *mut Screen {
 	Box::leak(Box::new(Screen {
 		screen: ctx.ctx.create_screen(geo),
+		#[cfg(windows)]
+		geo,
 		string: None,
 		strings: Vec::new(),
 		string_ptrs: Vec::new(),
@@ -220,4 +230,31 @@ pub unsafe extern "C" fn client_is_pilot_enabled(
 	};
 
 	screen.screen.is_pilot_enabled(callsign)
+}
+
+#[cfg(windows)]
+#[repr(C)]
+pub union Viewport {
+	geo: ViewportGeo,
+	non_geo: ViewportNonGeo,
+}
+
+#[cfg(windows)]
+#[no_mangle]
+pub unsafe extern "C" fn client_draw_background(
+	screen: &mut Screen,
+	hdc: HDC,
+	viewport: Viewport,
+) {
+	if screen.geo {
+		screen.screen.draw_background_geo(hdc, viewport.geo);
+	} else {
+		screen.screen.draw_background_non_geo(hdc, viewport.non_geo);
+	}
+}
+
+#[cfg(windows)]
+#[no_mangle]
+pub unsafe extern "C" fn client_draw_foreground(screen: &mut Screen, hdc: HDC) {
+	screen.screen.draw_foreground(hdc);
 }

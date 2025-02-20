@@ -49,3 +49,19 @@ pub enum ActivityState {
 	Observing,
 	Controlling,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct ViewportGeo {
+	origin: [f64; 2],
+	scaling: [f64; 2],
+	rotation: f64,
+	size: [f64; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct ViewportNonGeo {
+	origin: [f64; 2],
+	size: [f64; 2],
+}

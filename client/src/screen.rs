@@ -2,7 +2,13 @@ use crate::client::Aerodrome;
 use crate::context::Context;
 use crate::ActivityState;
 
+#[cfg(windows)]
+use crate::{ViewportGeo, ViewportNonGeo};
+
 use tracing::warn;
+
+#[cfg(windows)]
+use windows::Win32::Graphics::Gdi::HDC;
 
 pub struct Screen<'a> {
 	context: &'a mut Context,
@@ -146,6 +152,25 @@ impl<'a> Screen<'a> {
 			.data()
 			.map(|aerodrome| aerodrome.is_pilot_enabled(callsign))
 			.unwrap_or(false)
+	}
+
+	#[cfg(windows)]
+	pub fn draw_background_geo(&mut self, _hdc: HDC, _viewport: ViewportGeo) {
+		todo!()
+	}
+
+	#[cfg(windows)]
+	pub fn draw_background_non_geo(
+		&mut self,
+		_hdc: HDC,
+		_viewport: ViewportNonGeo,
+	) {
+		todo!()
+	}
+
+	#[cfg(windows)]
+	pub fn draw_foreground(&mut self, _hdc: HDC) {
+		todo!()
 	}
 }
 
