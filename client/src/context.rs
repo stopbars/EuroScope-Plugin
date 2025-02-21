@@ -32,6 +32,17 @@ pub struct Context {
 
 impl Context {
 	pub fn new(dir: &str) -> Option<Self> {
+		std::panic::set_hook(Box::new(|info| {
+			let err = Box::new(info.payload());
+			if let Some(err) = err.downcast_ref::<&str>() {
+				tracing::error!("panic: {err}");
+			} else if let Some(err) = err.downcast_ref::<String>() {
+				tracing::error!("panic: {err}");
+			} else {
+				tracing::error!("panic");
+			}
+		}));
+
 		static LOG_PREFIX: &str = concat!(env!("CARGO_PKG_NAME"), "-");
 		static LOG_SUFFIX: &str = ".log";
 
