@@ -355,7 +355,7 @@ impl Input for Svg<'_> {
 						};
 						Color {
 							r: color.red,
-							g: color.blue,
+							g: color.green,
 							b: color.blue,
 							a: fill.opacity().to_u8(),
 						}
@@ -370,7 +370,7 @@ impl Input for Svg<'_> {
 					};
 					style.stroke_color = Color {
 						r: color.red,
-						g: color.blue,
+						g: color.green,
 						b: color.blue,
 						a: stroke.opacity().to_u8(),
 					};
