@@ -87,10 +87,12 @@ fn main() -> Result<()> {
 		}
 
 		let mut edges = Vec::new();
+		let mut id_edges = Vec::new();
 		let mut edge_ids = HashMap::new();
 		for edge in input.edges {
 			let display = display.edges.remove(&edge.id).unwrap_or_default();
 
+			id_edges.push(edge.id.clone());
 			edge_ids.insert(edge.id, edges.len());
 			edges.push(lib::Edge { display });
 		}
@@ -177,9 +179,10 @@ fn main() -> Result<()> {
 				.get(&IdList::wildcard())
 				.cloned()
 				.unwrap_or_default();
-			let edges = edge_ids
+			let edges = id_edges
 				.iter()
-				.map(|(id, index)| {
+				.enumerate()
+				.map(|(index, id)| {
 					profile
 						.edges
 						.iter()
@@ -189,9 +192,9 @@ fn main() -> Result<()> {
 						.convert(
 							&node_ids,
 							edge_blocks
-								.get(index)
+								.get(&index)
 								.copied()
-								.zip(edge_conditions.get(index).cloned()),
+								.zip(edge_conditions.get(&index).cloned()),
 						)
 				})
 				.collect();
