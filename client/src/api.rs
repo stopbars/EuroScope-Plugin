@@ -5,10 +5,12 @@ use crate::screen::Screen as ScreenImpl;
 use crate::{ActivityState, ConnectionState};
 
 #[cfg(windows)]
-use crate::{ViewportGeo, ViewportNonGeo};
+use crate::{ClickType, ViewportGeo, ViewportNonGeo};
 
 use std::ffi::{c_char, CStr, CString};
 
+#[cfg(windows)]
+use windows::Win32::Foundation::{POINT, RECT};
 #[cfg(windows)]
 use windows::Win32::Graphics::Gdi::HDC;
 
@@ -255,6 +257,35 @@ pub unsafe extern "C" fn client_draw_background(
 
 #[cfg(windows)]
 #[no_mangle]
-pub unsafe extern "C" fn client_draw_foreground(screen: &mut Screen, hdc: HDC) {
+pub extern "C" fn client_draw_foreground(screen: &mut Screen, hdc: HDC) {
 	screen.screen.draw_foreground(hdc);
+}
+
+#[cfg(windows)]
+#[no_mangle]
+pub extern "C" fn client_get_click_regions(
+	screen: &mut Screen,
+	n: &mut usize,
+) -> *const RECT {
+	let regions = screen.screen.click_regions();
+	*n = regions.len();
+	regions.as_ptr()
+}
+
+#[cfg(windows)]
+#[no_mangle]
+pub extern "C" fn client_handle_click(
+	screen: &mut Screen,
+	point: POINT,
+	click: ClickType,
+) -> *const c_char {
+	if let Some(scratchpad) = screen.screen.handle_click(point, click) {
+		let string =
+			unsafe { CString::from_vec_unchecked(scratchpad.into_bytes()) };
+		let ptr = string.as_ptr();
+		screen.string = Some(string);
+		ptr
+	} else {
+		std::ptr::null()
+	}
 }

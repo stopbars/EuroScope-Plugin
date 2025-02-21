@@ -65,3 +65,10 @@ pub struct ViewportNonGeo {
 	origin: [f64; 2],
 	size: [f64; 2],
 }
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(C)]
+pub enum ClickType {
+	Primary,
+	Auxiliary,
+}
