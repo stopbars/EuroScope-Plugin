@@ -2,7 +2,7 @@ export TARGET = i686-pc-windows-msvc
 export PROFILE ?= debug
 
 ifeq ($(PROFILE),release)
-PROFILE_ARG = --release
+export PROFILE_ARG = --release
 else
 ifneq ($(PROFILE),debug)
 $(error Unknown compilation profile)
