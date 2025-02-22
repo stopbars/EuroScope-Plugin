@@ -238,7 +238,9 @@ impl Aerodrome {
 		for (id, state) in patch.nodes {
 			if let Some(i) = self.node_ids.get(&id).copied() {
 				self.nodes[i].current = state;
-				self.nodes[i].pending = None;
+				if self.nodes[i].pending == Some(state) {
+					self.nodes[i].pending = None;
+				}
 			}
 		}
 
@@ -249,7 +251,9 @@ impl Aerodrome {
 				};
 
 				self.blocks[i].current = state;
-				self.blocks[i].pending = None;
+				if self.blocks[i].pending == Some(state) {
+					self.blocks[i].pending = None;
+				}
 			}
 		}
 	}
