@@ -494,49 +494,88 @@ impl Aerodrome {
 	}
 
 	pub fn set_route(&mut self, (orgn, dest): (usize, usize)) {
-		// under the specification, routing should be rejected if the route is
-		// ambiguous, but this is inefficient to check for
+		if self.config.profiles[self.profile].nodes[orgn] != NodeCondition::Router
+			|| self.config.profiles[self.profile].nodes[dest] != NodeCondition::Router
+		{
+			return
+		}
 
-		let mut nodes = VecDeque::from([(orgn, false), (orgn, true)]);
-		let mut visited = HashSet::new();
+		let mut nodes = VecDeque::from([(orgn, false, 0), (orgn, true, 0)]);
+		let mut visited = HashSet::from([(orgn, false), (orgn, true)]);
 		let mut chain = HashMap::new();
+		let mut list: Option<Vec<(usize, bool)>> = None;
+		let mut revisited = HashSet::new();
 
-		while let Some(prev @ (node, direction)) = nodes.pop_front() {
-			let transparent = self.config.profiles[self.profile].nodes[node]
-				== NodeCondition::Fixed { state: false };
+		while let Some((node, direction, distance)) = nodes.pop_front() {
+			let condition = self.config.profiles[self.profile].nodes[node];
+			if condition == (NodeCondition::Fixed { state: true }) {
+				continue
+			}
+
+			let transparent = condition == NodeCondition::Fixed { state: false };
 
 			if node == dest {
-				let mut prev = Some(prev);
-				let mut list = Vec::new();
+				if list.is_none() {
+					let mut prev = Some((node, direction));
+					let list = list.get_or_insert_default();
 
-				while let Some(item) = prev {
-					list.push(item);
-					prev = chain.get(&item).copied();
+					let mut i = 0;
+
+					while let Some(item) = prev {
+						i += 1;
+						list.push(item);
+						prev = chain.get(&item).copied();
+
+						if i > 1000 {
+							tracing::warn!("overflow {chain:?} {visited:?} {nodes:?}");
+							return
+						}
+					}
+
+					if distance > 1 {
+						continue
+					} else {
+						break
+					}
+				} else {
+					tracing::debug!("routing error");
+					return
 				}
-
-				for pair in list.windows(2) {
-					let [(node2, _), (node1, direction1)] = pair else {
-						unreachable!()
-					};
-
-					let block = self.node_blocks[*node1][*direction1 as usize];
-					self.set_block_state(block, BlockState::Route((*node1, *node2)));
-				}
-
-				break
 			}
 
 			for (next_node, next_dir) in &self.node_conns[node][direction as usize] {
-				let next = (*next_node, !next_dir);
+				let next_key = (*next_node, !next_dir);
+				let next = (*next_node, !next_dir, distance + !transparent as usize);
 
-				if visited.insert(next) {
-					chain.insert(next, prev);
+				if visited.insert(next_key) {
+					chain.insert(next_key, (node, direction));
 					if transparent {
 						nodes.push_front(next);
 					} else {
 						nodes.push_back(next);
 					}
+				} else {
+					revisited.insert(next_key);
 				}
+			}
+		}
+
+		if let Some(list) = list {
+			if list[..list.len() - 1]
+				.iter()
+				.any(|key| revisited.contains(key))
+			{
+				tracing::debug!("routing error");
+				return
+			}
+
+			for pair in list.windows(2) {
+				let [(node2, _), (node1, direction1)] = pair else {
+					unreachable!()
+				};
+
+				let block = self.node_blocks[*node1][*direction1 as usize];
+				self.set_block_state(block, BlockState::Route((*node1, *node2)));
 			}
 		}
 	}
