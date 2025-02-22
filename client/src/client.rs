@@ -1,9 +1,9 @@
 use crate::ipc::{Channel, Downstream, Upstream};
 use crate::ActivityState;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
-use bars_config::BlockState;
+use bars_config::{BlockState, EdgeCondition, NodeCondition};
 
 use bars_protocol::{BlockState as IpcBlockState, Patch};
 
@@ -105,6 +105,18 @@ impl Client {
 	}
 }
 
+#[derive(Clone)]
+struct State<T> {
+	current: T,
+	pending: Option<T>,
+}
+
+impl<T> State<T> {
+	fn state(&self) -> &T {
+		self.pending.as_ref().unwrap_or(&self.current)
+	}
+}
+
 pub struct Aerodrome {
 	config: bars_config::Aerodrome,
 	state: ActivityState,
@@ -113,6 +125,10 @@ pub struct Aerodrome {
 
 	node_ids: HashMap<String, usize>,
 	block_ids: HashMap<String, usize>,
+
+	node_conns: Vec<[Vec<(usize, bool)>; 2]>,
+	node_blocks: Vec<[usize; 2]>,
+	children: HashMap<usize, Vec<usize>>,
 
 	nodes: Vec<State<bool>>,
 	blocks: Vec<State<BlockState>>,
@@ -123,12 +139,6 @@ pub struct Aerodrome {
 	pending_scenery: HashMap<String, bool>,
 }
 
-#[derive(Clone)]
-struct State<T> {
-	current: T,
-	pending: Option<T>,
-}
-
 impl Aerodrome {
 	fn new(config: bars_config::Aerodrome) -> Self {
 		let mut this = Self {
@@ -137,6 +147,9 @@ impl Aerodrome {
 			profile: 0,
 			node_ids: HashMap::new(),
 			block_ids: HashMap::new(),
+			node_conns: Vec::new(),
+			node_blocks: Vec::new(),
+			children: HashMap::new(),
 			nodes: Vec::new(),
 			blocks: Vec::new(),
 			aircraft: HashSet::new(),
@@ -144,14 +157,49 @@ impl Aerodrome {
 			pending_scenery: HashMap::new(),
 		};
 
+		let mut borders = vec![0; this.config.nodes.len()];
+		this
+			.node_conns
+			.resize(this.config.nodes.len(), [Vec::new(), Vec::new()]);
+		this.node_blocks.resize(this.config.nodes.len(), [0; 2]);
+
 		for (i, node) in this.config.nodes.iter().enumerate() {
 			this.node_ids.insert(node.id.clone(), i);
-		}
-		for (i, block) in this.config.blocks.iter().enumerate() {
-			this.block_ids.insert(block.id.clone(), i);
+
+			if let Some(parent) = node.parent {
+				this.children.entry(parent).or_default().push(i);
+			}
 		}
 
-		this.set_default_state();
+		for (i, block) in this.config.blocks.iter().enumerate() {
+			this.block_ids.insert(block.id.clone(), i);
+
+			let conns = block
+				.nodes
+				.iter()
+				.copied()
+				.map(|node| (node, borders[node] > 0))
+				.collect::<Vec<_>>();
+
+			for node in block.nodes.iter().copied() {
+				let node_borders = &mut borders[node];
+
+				this.node_blocks[node][1] = i;
+				this.node_blocks[node][*node_borders] = i;
+
+				this.node_conns[node][*node_borders].extend(conns.iter().filter(
+					|(node_, _)| {
+						*node_ != node
+							&& !block.non_routes.contains(&(*node_, node))
+							&& !block.non_routes.contains(&(node, *node_))
+					},
+				));
+
+				*node_borders += 1;
+			}
+		}
+
+		this.set_default_state(false);
 
 		this
 	}
@@ -206,6 +254,58 @@ impl Aerodrome {
 		}
 	}
 
+	fn set_default_state(&mut self, patch: bool) {
+		self.nodes = Vec::with_capacity(self.config.nodes.len());
+		self.blocks = vec![
+			State {
+				current: bars_config::BlockState::Clear,
+				pending: None,
+			};
+			self.config.blocks.len()
+		];
+
+		for i in 0..self.config.nodes.len() {
+			self.nodes.push(State {
+				current: match self.config.profiles[self.profile].nodes[i] {
+					bars_config::NodeCondition::Fixed { state } => state,
+					_ => true,
+				},
+				pending: None,
+			});
+		}
+
+		if patch {
+			self.pending_patch.nodes =
+				HashMap::from_iter(self.nodes.iter().enumerate().map(
+					|(node, state)| (self.config.nodes[node].id.clone(), *state.state()),
+				));
+			self.pending_patch.blocks = HashMap::from_iter(
+				self.blocks.iter().enumerate().map(|(block, state)| {
+					(
+						self.config.blocks[block].id.clone(),
+						self.bs_conf_to_ipc(state.state()),
+					)
+				}),
+			);
+		}
+	}
+
+	fn set_node_state(&mut self, node: usize, state: bool) {
+		self.nodes[node].pending = Some(state);
+		self
+			.pending_patch
+			.nodes
+			.insert(self.config.nodes[node].id.clone(), state);
+	}
+
+	fn set_block_state(&mut self, block: usize, state: BlockState) {
+		self.blocks[block].pending = Some(state);
+		self.pending_patch.blocks.insert(
+			self.config.blocks[block].id.clone(),
+			self.bs_conf_to_ipc(&state),
+		);
+	}
+
 	pub fn state(&self) -> ActivityState {
 		self.state
 	}
@@ -221,6 +321,7 @@ impl Aerodrome {
 
 		self.profile = i;
 		self.pending_patch.profile = Some(self.config.profiles[i].id.clone());
+		self.set_default_state(true);
 	}
 
 	pub fn apply_preset(&mut self, i: usize) {
@@ -257,24 +358,198 @@ impl Aerodrome {
 		self.aircraft.contains(callsign)
 	}
 
-	fn set_default_state(&mut self) {
-		self.nodes = Vec::with_capacity(self.config.nodes.len());
-		self.blocks = vec![
-			State {
-				current: bars_config::BlockState::Relax,
-				pending: None,
-			};
-			self.config.blocks.len()
-		];
+	pub fn node_state(&self, node: usize) -> bool {
+		match self.config.profiles[self.profile].nodes[node] {
+			NodeCondition::Fixed { state } => state,
+			NodeCondition::Direct { .. } => *self.nodes[node].state(),
+			NodeCondition::Router => {
+				let blocks = &self.node_blocks[node];
+				blocks[0] != blocks[1]
+					&& blocks
+						.iter()
+						.any(|block| match self.blocks[*block].state() {
+							BlockState::Clear => true,
+							BlockState::Relax => false,
+							BlockState::Route((a, b)) => *a != node && *b != node,
+						})
+			},
+		}
+	}
 
-		for i in 0..self.config.nodes.len() {
-			self.nodes.push(State {
-				current: match self.config.profiles[self.profile].nodes[i] {
-					bars_config::NodeCondition::Fixed { state } => state,
-					_ => true,
-				},
-				pending: None,
-			});
+	fn route_candidates(&self, block: usize) -> Vec<(usize, usize)> {
+		let BlockState::Route((ap, bp)) = *self.blocks[block].state() else {
+			return vec![]
+		};
+
+		let mut routes = Vec::new();
+
+		let ao = vec![ap];
+		let bo = vec![bp];
+		let ac = self.children.get(&ap).unwrap_or(&ao);
+		let bc = self.children.get(&bp).unwrap_or(&bo);
+
+		let non_routes = &self.config.blocks[block].non_routes;
+
+		for a in ac.iter().copied() {
+			for b in bc.iter().copied() {
+				if !non_routes.contains(&(a, b)) && !non_routes.contains(&(b, a)) {
+					routes.push((a, b));
+				}
+			}
+		}
+
+		routes
+	}
+
+	pub fn edge_state(&self, edge: usize) -> bool {
+		match self.config.profiles[self.profile].edges[edge] {
+			EdgeCondition::Fixed { state } => state,
+			EdgeCondition::Direct { node } => !self.node_state(node),
+			EdgeCondition::Router { block, ref routes } => {
+				match *self.blocks[block].state() {
+					BlockState::Clear => false,
+					BlockState::Relax => true,
+					BlockState::Route((ap, bp)) => {
+						let cands = self.route_candidates(block);
+						match cands.len() {
+							0 => return false,
+							1 => {
+								let (a, b) = cands[0];
+								return routes.contains(&(a, b)) || routes.contains(&(b, a))
+							},
+							_ => (),
+						}
+
+						// this implementation works for the most common cases only; it does
+						// not support the specification in full
+
+						let mut matches = (HashSet::new(), HashSet::new());
+
+						let ao = vec![ap];
+						let ac = self.children.get(&ap).unwrap_or(&ao);
+						for (a, b) in routes.iter().copied() {
+							let (a, b) = if ac.contains(&a) { (a, b) } else { (b, a) };
+
+							matches.0.insert(a);
+							matches.1.insert(b);
+						}
+
+						let mut cands = (
+							HashSet::<usize>::from_iter(cands.iter().map(|r| r.0)),
+							HashSet::<usize>::from_iter(cands.iter().map(|r| r.1)),
+						);
+
+						for (parent, cands) in [(ap, &mut cands.0), (bp, &mut cands.1)] {
+							let [b1, b2] = self.node_blocks[parent];
+							let adjacent = if b1 != block { b1 } else { b2 };
+
+							match *self.blocks[adjacent].state() {
+								BlockState::Clear => (),
+								BlockState::Relax => cands.clear(),
+								BlockState::Route((a, b)) => {
+									let points = self.route_candidates(adjacent).into_iter();
+
+									if a == parent {
+										*cands = HashSet::from_iter(points.map(|r| r.0));
+									} else if b == parent {
+										*cands = HashSet::from_iter(points.map(|r| r.1));
+									}
+								},
+							}
+						}
+
+						cands.0.is_subset(&matches.0) && cands.1.is_subset(&matches.1)
+					},
+				}
+			},
+		}
+	}
+
+	pub fn set_block(&mut self, block: usize, state: BlockState) {
+		if block >= self.blocks.len() {
+			return
+		}
+
+		let mut blocks = vec![block];
+		let mut visited = HashSet::new();
+
+		while let Some(block) = blocks.pop() {
+			if !visited.insert(block) {
+				continue
+			}
+
+			self.set_block_state(block, state);
+
+			blocks.extend(
+				self.config.blocks[block]
+					.nodes
+					.iter()
+					.filter(|node| {
+						self.config.profiles[self.profile].nodes[**node]
+							== NodeCondition::Fixed { state: false }
+					})
+					.flat_map(|node| self.node_blocks[*node]),
+			);
+		}
+	}
+
+	pub fn set_route(&mut self, (orgn, dest): (usize, usize)) {
+		// under the specification, routing should be rejected if the route is
+		// ambiguous, but this is inefficient to check for
+
+		let mut nodes = VecDeque::from([(orgn, false), (orgn, true)]);
+		let mut visited = HashSet::new();
+		let mut chain = HashMap::new();
+
+		while let Some(prev @ (node, direction)) = nodes.pop_front() {
+			let transparent = self.config.profiles[self.profile].nodes[node]
+				== NodeCondition::Fixed { state: false };
+
+			if node == dest {
+				let mut prev = Some(prev);
+				let mut list = Vec::new();
+
+				while let Some(item) = prev {
+					list.push(item);
+					prev = chain.get(&item).copied();
+				}
+
+				for pair in list.windows(2) {
+					let [(node2, _), (node1, direction1)] = pair else {
+						unreachable!()
+					};
+
+					let block = self.node_blocks[*node1][*direction1 as usize];
+					self.set_block_state(block, BlockState::Route((*node1, *node2)));
+				}
+
+				break
+			}
+
+			for (next_node, next_dir) in &self.node_conns[node][direction as usize] {
+				let next = (*next_node, !next_dir);
+
+				if visited.insert(next) {
+					chain.insert(next, prev);
+					if transparent {
+						nodes.push_front(next);
+					} else {
+						nodes.push_back(next);
+					}
+				}
+			}
+		}
+	}
+
+	pub fn set_node(&mut self, node: usize, state: bool) {
+		if node >= self.nodes.len() {
+			return
+		}
+
+		if let NodeCondition::Direct { .. } =
+			self.config.profiles[self.profile].nodes[node]
+		{
+			self.set_node_state(node, state);
 		}
 	}
 }
