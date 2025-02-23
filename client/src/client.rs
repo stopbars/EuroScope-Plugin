@@ -2,14 +2,15 @@ use crate::ipc::{Channel, Downstream, Upstream};
 use crate::ActivityState;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
-use bars_config::{BlockState, EdgeCondition, NodeCondition};
+use bars_config::{BlockCondition, BlockState, EdgeCondition, NodeCondition, ResetCondition};
 
 use bars_protocol::{BlockState as IpcBlockState, Patch};
 
 use anyhow::Result;
 
-use tracing::warn;
+use tracing::{debug, warn};
 
 pub struct Client {
 	channel: Channel,
@@ -59,6 +60,8 @@ impl Client {
 		}
 
 		for (icao, aerodrome) in &mut self.aerodromes {
+			aerodrome.tick();
+
 			let patch = std::mem::take(&mut aerodrome.pending_patch);
 			if !patch.is_empty() {
 				self.channel.send(Upstream::Patch {
@@ -137,6 +140,9 @@ pub struct Aerodrome {
 
 	pending_patch: Patch,
 	pending_scenery: HashMap<String, bool>,
+
+	node_timers: Vec<(usize, Instant)>,
+	block_timers: Vec<(usize, Instant)>,
 }
 
 impl Aerodrome {
@@ -155,6 +161,8 @@ impl Aerodrome {
 			aircraft: HashSet::new(),
 			pending_patch: Default::default(),
 			pending_scenery: HashMap::new(),
+			node_timers: Vec::new(),
+			block_timers: Vec::new(),
 		};
 
 		let mut borders = vec![0; this.config.nodes.len()];
@@ -230,6 +238,9 @@ impl Aerodrome {
 			if let Some(i) = self.config.profiles.iter().position(|p| p.id == profile)
 			{
 				self.profile = i;
+
+				self.node_timers.clear();
+				self.block_timers.clear();
 			} else {
 				warn!("requested to set unknown profile");
 			}
@@ -240,6 +251,8 @@ impl Aerodrome {
 				self.nodes[i].current = state;
 				if self.nodes[i].pending == Some(state) {
 					self.nodes[i].pending = None;
+				} else {
+					self.node_timers.retain(|(node, _)| node != &i);
 				}
 			}
 		}
@@ -253,8 +266,24 @@ impl Aerodrome {
 				self.blocks[i].current = state;
 				if self.blocks[i].pending == Some(state) {
 					self.blocks[i].pending = None;
+				} else {
+					self.block_timers.retain(|(block, _)| block != &i);
 				}
 			}
+		}
+	}
+
+	fn tick(&mut self) {
+		let now = Instant::now();
+
+		while self.node_timers.first().map(|(_, time)| time < &now) == Some(true) {
+			let (node, _) = self.node_timers.remove(0);
+			self.set_node(node, true);
+		}
+
+		while self.block_timers.first().map(|(_, time)| time < &now) == Some(true) {
+			let (block, _) = self.block_timers.remove(0);
+			self.set_block(block, BlockState::Clear);
 		}
 	}
 
@@ -262,7 +291,7 @@ impl Aerodrome {
 		self.nodes = Vec::with_capacity(self.config.nodes.len());
 		self.blocks = vec![
 			State {
-				current: bars_config::BlockState::Clear,
+				current: BlockState::Clear,
 				pending: None,
 			};
 			self.config.blocks.len()
@@ -271,7 +300,7 @@ impl Aerodrome {
 		for i in 0..self.config.nodes.len() {
 			self.nodes.push(State {
 				current: match self.config.profiles[self.profile].nodes[i] {
-					bars_config::NodeCondition::Fixed { state } => state,
+					NodeCondition::Fixed { state } => state,
 					_ => true,
 				},
 				pending: None,
@@ -292,6 +321,9 @@ impl Aerodrome {
 				}),
 			);
 		}
+
+		self.node_timers.clear();
+		self.block_timers.clear();
 	}
 
 	fn set_node_state(&mut self, node: usize, state: bool) {
@@ -300,6 +332,18 @@ impl Aerodrome {
 			.pending_patch
 			.nodes
 			.insert(self.config.nodes[node].id.clone(), state);
+
+		self.node_timers.retain(|(node_, _)| node_ != &node);
+
+		if !state {
+			if let NodeCondition::Direct {
+				reset: ResetCondition::TimeSecs(secs),
+			} = self.config.profiles[self.profile].nodes[node]
+			{
+				let deadline = Instant::now() + Duration::from_secs(secs as u64);
+				self.node_timers.push((node, deadline));
+			}
+		}
 	}
 
 	fn set_block_state(&mut self, block: usize, state: BlockState) {
@@ -308,6 +352,18 @@ impl Aerodrome {
 			self.config.blocks[block].id.clone(),
 			self.bs_conf_to_ipc(&state),
 		);
+
+		self.block_timers.retain(|(block_, _)| block_ != &block);
+
+		if state != BlockState::Clear {
+			if let BlockCondition {
+				reset: ResetCondition::TimeSecs(secs),
+			} = self.config.profiles[self.profile].blocks[block]
+			{
+				let deadline = Instant::now() + Duration::from_secs(secs as u64);
+				self.block_timers.push((block, deadline));
+			}
+		}
 	}
 
 	pub fn state(&self) -> ActivityState {
@@ -352,6 +408,9 @@ impl Aerodrome {
 
 		self.pending_patch.nodes = nodes;
 		self.pending_patch.blocks = blocks;
+
+		self.node_timers.clear();
+		self.block_timers.clear();
 	}
 
 	pub fn config(&self) -> &bars_config::Aerodrome {
@@ -530,7 +589,7 @@ impl Aerodrome {
 						prev = chain.get(&item).copied();
 
 						if i > 1000 {
-							tracing::warn!("overflow {chain:?} {visited:?} {nodes:?}");
+							warn!("overflow {chain:?} {visited:?} {nodes:?}");
 							return
 						}
 					}
@@ -541,7 +600,7 @@ impl Aerodrome {
 						break
 					}
 				} else {
-					tracing::debug!("routing error");
+					debug!("routing error");
 					return
 				}
 			}
@@ -568,7 +627,7 @@ impl Aerodrome {
 				.iter()
 				.any(|key| revisited.contains(key))
 			{
-				tracing::debug!("routing error");
+				debug!("routing error");
 				return
 			}
 
