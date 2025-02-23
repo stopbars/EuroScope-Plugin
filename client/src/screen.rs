@@ -84,8 +84,8 @@ impl Style {
 impl Drop for Style {
 	fn drop(&mut self) {
 		unsafe {
-			Gdi::DeleteObject(self.brush.into());
-			Gdi::DeleteObject(self.pen.into());
+			let _ = Gdi::DeleteObject(self.brush.into());
+			let _ = Gdi::DeleteObject(self.pen.into());
 		}
 	}
 }
