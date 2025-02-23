@@ -1,7 +1,7 @@
 #pragma once
 
-#include "import.hpp"
 #include "screen.hpp"
+#include "import.hpp"
 
 #include <bars-client.hpp>
 
