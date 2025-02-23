@@ -368,14 +368,13 @@ impl Aerodrome {
 			NodeCondition::Direct { .. } => *self.nodes[node].state(),
 			NodeCondition::Router => {
 				let blocks = &self.node_blocks[node];
-				blocks[0] != blocks[1]
-					&& blocks
-						.iter()
-						.any(|block| match self.blocks[*block].state() {
-							BlockState::Clear => true,
-							BlockState::Relax => false,
-							BlockState::Route((a, b)) => *a != node && *b != node,
-						})
+				blocks
+					.iter()
+					.any(|block| match self.blocks[*block].state() {
+						BlockState::Clear => true,
+						BlockState::Relax => false,
+						BlockState::Route((a, b)) => *a != node && *b != node,
+					})
 			},
 		}
 	}
