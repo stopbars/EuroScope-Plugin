@@ -96,11 +96,13 @@ pub struct Screen<'a> {
 	view: Option<usize>,
 	transform: Transform,
 	targets: Option<Lookup2d<Target>>,
-
 	click_regions: Vec<RECT>,
 	selected: Option<(usize, Instant)>,
-
 	styles: Vec<Style>,
+	refresh_required: bool,
+	last_controlling: bool,
+	last_data: bool,
+	last_profile: usize,
 }
 
 impl<'a> Screen<'a> {
@@ -111,10 +113,13 @@ impl<'a> Screen<'a> {
 			view: (!geo).then_some(0),
 			transform: Transform::new(),
 			targets: None,
-
 			click_regions: Vec::new(),
 			selected: None,
 			styles: Vec::new(),
+			refresh_required: true,
+			last_controlling: false,
+			last_data: false,
+			last_profile: usize::MAX,
 		}
 	}
 }
@@ -156,6 +161,10 @@ impl Screen<'_> {
 			targets.clear(Target::None);
 		}
 		self.styles.clear();
+
+		self.refresh_required = true;
+		self.last_controlling = false;
+		self.last_profile = usize::MAX;
 	}
 
 	pub fn state(&self) -> ActivityState {
@@ -176,6 +185,8 @@ impl Screen<'_> {
 			{
 				warn!("failed to set state: {err}");
 			}
+
+			self.refresh_required = true;
 		}
 	}
 
@@ -202,6 +213,7 @@ impl Screen<'_> {
 
 	pub fn set_profile(&mut self, i: usize) {
 		self.data_mut().map(|aerodrome| aerodrome.set_profile(i));
+		self.refresh_required = true;
 	}
 
 	pub fn presets(&self) -> Vec<String> {
@@ -244,6 +256,7 @@ impl Screen<'_> {
 	pub fn set_view(&mut self, i: usize) {
 		if let Some(view) = self.view.as_mut() {
 			*view = i;
+			self.refresh_required = true;
 		}
 	}
 
@@ -348,6 +361,8 @@ impl Screen<'_> {
 
 		let instant_start = std::time::Instant::now();
 
+		let _ = self.is_background_refresh_required();
+
 		if self.styles.is_empty() {
 			self.load_styles();
 		}
@@ -431,6 +446,8 @@ impl Screen<'_> {
 	) {
 		let instant_start = std::time::Instant::now();
 
+		let _ = self.is_background_refresh_required();
+
 		if self.styles.is_empty() {
 			self.load_styles();
 		}
@@ -448,9 +465,7 @@ impl Screen<'_> {
 
 		let mut targets = self.targets.take().unwrap_or_default();
 
-		let Some(aerodrome) = self.data() else {
-			return
-		};
+		let Some(aerodrome) = self.data() else { return };
 		let Some(view) = aerodrome.config().views.get(self.view.unwrap()) else {
 			return
 		};
@@ -471,9 +486,7 @@ impl Screen<'_> {
 		self.transform = Transform::new_view(viewport, view.bounds);
 		self.targets = Some(targets);
 
-		let Some(aerodrome) = self.data() else {
-			return
-		};
+		let Some(aerodrome) = self.data() else { return };
 		let Some(view) = aerodrome.config().views.get(self.view.unwrap()) else {
 			return
 		};
@@ -668,6 +681,24 @@ impl Screen<'_> {
 				None
 			},
 		}
+	}
+
+	#[must_use]
+	pub fn is_background_refresh_required(&mut self) -> bool {
+		let controlling = self.is_controlling();
+		let data = self.data().is_some();
+		let profile = self.profile();
+
+		let explicit = std::mem::take(&mut self.refresh_required);
+		let controlling =
+			std::mem::replace(&mut self.last_controlling, controlling);
+		let data = std::mem::replace(&mut self.last_data, data);
+		let profile = std::mem::replace(&mut self.last_profile, profile);
+
+		explicit
+			|| controlling != self.last_controlling
+			|| data != self.last_data
+			|| profile != self.last_profile
 	}
 }
 

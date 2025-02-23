@@ -291,3 +291,10 @@ pub extern "C" fn client_handle_click(
 		std::ptr::null()
 	}
 }
+
+#[no_mangle]
+pub extern "C" fn client_is_background_refresh_required(
+	screen: &mut Screen,
+) -> bool {
+	screen.screen.is_background_refresh_required()
+}
