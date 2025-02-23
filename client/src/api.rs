@@ -2,16 +2,13 @@
 
 use crate::context::Context as ContextImpl;
 use crate::screen::Screen as ScreenImpl;
-use crate::{ActivityState, ConnectionState};
-
-#[cfg(windows)]
-use crate::{ClickType, ViewportGeo, ViewportNonGeo};
+use crate::{
+	ActivityState, ClickType, ConnectionState, ViewportGeo, ViewportNonGeo,
+};
 
 use std::ffi::{c_char, CStr, CString};
 
-#[cfg(windows)]
 use windows::Win32::Foundation::{POINT, RECT};
-#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::HDC;
 
 struct Context {
@@ -21,7 +18,6 @@ struct Context {
 
 struct Screen {
 	screen: ScreenImpl<'static>,
-	#[cfg(windows)]
 	geo: bool,
 	string: Option<CString>,
 	strings: Vec<CString>,
@@ -121,7 +117,6 @@ pub extern "C" fn client_create_screen(
 ) -> *mut Screen {
 	Box::leak(Box::new(Screen {
 		screen: ctx.ctx.create_screen(geo),
-		#[cfg(windows)]
 		geo,
 		string: None,
 		strings: Vec::new(),
@@ -234,14 +229,12 @@ pub unsafe extern "C" fn client_is_pilot_enabled(
 	screen.screen.is_pilot_enabled(callsign)
 }
 
-#[cfg(windows)]
 #[repr(C)]
 pub union Viewport {
 	geo: ViewportGeo,
 	non_geo: ViewportNonGeo,
 }
 
-#[cfg(windows)]
 #[no_mangle]
 pub unsafe extern "C" fn client_draw_background(
 	screen: &mut Screen,
@@ -255,13 +248,23 @@ pub unsafe extern "C" fn client_draw_background(
 	}
 }
 
-#[cfg(windows)]
 #[no_mangle]
 pub extern "C" fn client_draw_foreground(screen: &mut Screen, hdc: HDC) {
 	screen.screen.draw_foreground(hdc);
 }
 
-#[cfg(windows)]
+#[no_mangle]
+pub unsafe extern "C" fn client_set_viewport(
+	screen: &mut Screen,
+	viewport: Viewport,
+) {
+	if screen.geo {
+		screen.screen.set_viewport_geo(viewport.geo);
+	} else {
+		screen.screen.set_viewport_non_geo(viewport.non_geo);
+	}
+}
+
 #[no_mangle]
 pub extern "C" fn client_get_click_regions(
 	screen: &mut Screen,
@@ -272,7 +275,6 @@ pub extern "C" fn client_get_click_regions(
 	regions.as_ptr()
 }
 
-#[cfg(windows)]
 #[no_mangle]
 pub extern "C" fn client_handle_click(
 	screen: &mut Screen,

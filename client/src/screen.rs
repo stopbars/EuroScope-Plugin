@@ -5,7 +5,10 @@ use crate::{ActivityState, ClickType, ViewportGeo, ViewportNonGeo};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-use bars_config::{Color, FillStyle, Geo, GeoPoint, Path, Point, NodeDisplay, BlockDisplay, NodeCondition, BlockState, EdgeCondition, EdgeDisplay};
+use bars_config::{
+	BlockDisplay, BlockState, Color, EdgeCondition, EdgeDisplay, FillStyle, Geo,
+	GeoPoint, NodeCondition, NodeDisplay, Path, Point,
+};
 
 use tracing::{trace, warn};
 
@@ -325,10 +328,7 @@ impl Screen<'_> {
 		let profile = &aerodrome.config().profiles[aerodrome.profile()];
 
 		for (i, node) in nodes.enumerate() {
-			if !matches!(
-				profile.nodes[i],
-				NodeCondition::Fixed { .. }
-			) {
+			if !matches!(profile.nodes[i], NodeCondition::Fixed { .. }) {
 				let points = self.project_points(&node.target.points);
 				targets.add_poly(Target::Node(i as u16), &points);
 			}
@@ -448,21 +448,35 @@ impl Screen<'_> {
 
 		let mut targets = self.targets.take().unwrap_or_default();
 
-		let Some(ad @ aerodrome) = self.data() else { return };
-		let Some(view) = ad.config().views.get(self.view.unwrap()) else { return };
+		let Some(aerodrome) = self.data() else {
+			return
+		};
+		let Some(view) = aerodrome.config().views.get(self.view.unwrap()) else {
+			return
+		};
 
 		self.setup_targets(
 			viewport.size,
-			aerodrome.config().maps[view.map].nodes.iter().map(|node| node),
-			aerodrome.config().maps[view.map].blocks.iter().map(|block| block),
+			aerodrome.config().maps[view.map]
+				.nodes
+				.iter()
+				.map(|node| node),
+			aerodrome.config().maps[view.map]
+				.blocks
+				.iter()
+				.map(|block| block),
 			&mut targets,
 		);
 
 		self.transform = Transform::new_view(viewport, view.bounds);
 		self.targets = Some(targets);
 
-		let Some(ad @ aerodrome) = self.data() else { return };
-		let Some(view) = ad.config().views.get(self.view.unwrap()) else { return };
+		let Some(aerodrome) = self.data() else {
+			return
+		};
+		let Some(view) = aerodrome.config().views.get(self.view.unwrap()) else {
+			return
+		};
 
 		let map = &aerodrome.config().maps[view.map];
 
@@ -562,12 +576,7 @@ impl Screen<'_> {
 		if let Some(view) = self.view {
 			let map = &aerodrome.config().maps[aerodrome.config().views[view].map];
 
-			self.draw_items(
-				aerodrome,
-				map.nodes.iter(),
-				map.edges.iter(),
-				hdc,
-			);
+			self.draw_items(aerodrome, map.nodes.iter(), map.edges.iter(), hdc);
 		} else {
 			self.draw_items(
 				aerodrome,
@@ -580,6 +589,18 @@ impl Screen<'_> {
 		if instant_start.elapsed() > Duration::from_millis(1) {
 			trace!("fg {:?}", instant_start.elapsed());
 		}
+	}
+
+	pub fn set_viewport_geo(&mut self, viewport: ViewportGeo) {
+		self.transform = Transform::new_geo(viewport);
+	}
+
+	pub fn set_viewport_non_geo(&mut self, viewport: ViewportNonGeo) {
+		let Some(aerodrome) = self.data() else { return };
+		let Some(view) = self.view else { return };
+
+		let bounds = aerodrome.config().views[view].bounds;
+		self.transform = Transform::new_view(viewport, bounds);
 	}
 
 	pub fn click_regions(&self) -> &[RECT] {
