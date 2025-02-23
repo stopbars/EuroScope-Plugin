@@ -15,8 +15,8 @@ LDFLAGS = \
 	gdiplus.lib $(EXTRALIBS)
 
 LIBS = $(wildcard lib/*)
-SRCS = src/export.cpp src/plugin.cpp
-INCS = src/config.hpp src/import.hpp src/plugin.hpp $(wildcard inc/*)
+SRCS = src/export.cpp src/plugin.cpp src/screen.cpp
+INCS = src/config.hpp src/import.hpp src/plugin.hpp src/screen.hpp $(wildcard inc/*)
 OBJS = $(patsubst src/%.cpp,out/%.obj,$(SRCS))
 
 out/$(ARTIFACT): $(OBJS) $(LIBS)
