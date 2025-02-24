@@ -409,7 +409,7 @@ void Screen::OnFunctionCall(
 			auto presets = client::client_get_presets(screen_);
 			for (size_t i = 0; presets[i]; i++)
 				plugin_->AddPopupListElement(
-					presets[i], "", TagFunction(TagFunctionType::SubmitSelectView, i)
+					presets[i], "", TagFunction(TagFunctionType::SubmitSelectPreset, i)
 				);
 		} else {
 			pending_function_ = new TagFunction(TagFunctionType::OpenSelectPreset, 1);
