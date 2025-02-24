@@ -301,6 +301,7 @@ impl Aerodrome {
 			self.nodes.push(State {
 				current: match self.config.profiles[self.profile].nodes[i] {
 					NodeCondition::Fixed { state } => state,
+					NodeCondition::Direct { reset } => reset != ResetCondition::None,
 					_ => true,
 				},
 				pending: None,
