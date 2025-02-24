@@ -47,7 +47,7 @@ enum class TagFunctionType {
 
 union TagFunction {
 	struct {
-		TagFunctionType type : 4;
+		TagFunctionType type : 8;
 		size_t payload : 20;
 	} data;
 	int value;
