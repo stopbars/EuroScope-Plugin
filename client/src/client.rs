@@ -394,16 +394,37 @@ impl Aerodrome {
 		let mut blocks = HashMap::new();
 
 		for (node, state) in &preset.nodes {
-			self.nodes[*node].pending = Some(*state);
-			nodes.insert(self.config.nodes[*node].id.clone(), *state);
+			if (*node as u32) < u32::MAX {
+				self.nodes[*node].pending = Some(*state);
+				nodes.insert(self.config.nodes[*node].id.clone(), *state);
+			} else {
+				for node in 0..self.nodes.len() {
+					if !nodes.contains_key(&self.config.nodes[node].id) {
+						self.nodes[node].pending = Some(*state);
+						nodes.insert(self.config.nodes[node].id.clone(), *state);
+					}
+				}
+			}
 		}
 
 		for (block, state) in &preset.blocks {
-			self.blocks[*block].pending = Some(*state);
-			blocks.insert(
-				self.config.blocks[*block].id.clone(),
-				self.bs_conf_to_ipc(state),
-			);
+			if (*block as u32) < u32::MAX {
+				self.blocks[*block].pending = Some(*state);
+				blocks.insert(
+					self.config.blocks[*block].id.clone(),
+					self.bs_conf_to_ipc(state),
+				);
+			} else {
+				for block in 0..self.blocks.len() {
+					if !blocks.contains_key(&self.config.blocks[block].id) {
+						self.blocks[block].pending = Some(*state);
+						blocks.insert(
+							self.config.blocks[block].id.clone(),
+							self.bs_conf_to_ipc(state),
+						);
+					}
+				}
+			}
 		}
 
 		self.pending_patch.nodes = nodes;

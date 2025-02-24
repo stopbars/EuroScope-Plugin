@@ -172,7 +172,7 @@ fn main() -> Result<()> {
 						.unwrap_or(default_node)
 						.convert()
 				})
-				.collect();
+				.collect::<Vec<_>>();
 
 			let default_edge = profile
 				.edges
@@ -226,11 +226,19 @@ fn main() -> Result<()> {
 						.nodes
 						.into_iter()
 						.flat_map(|(ids, state)| {
+							let ids = if ids.0.is_empty() {
+								vec![u32::MAX as usize]
+							} else {
+								ids
+									.0
+									.iter()
+									.map(|id| *node_ids.get(id).unwrap())
+									.collect()
+							};
+
 							ids
-								.0
-								.iter()
-								.map(|id| *node_ids.get(id).unwrap())
-								.map(move |index| (index, state.clone()))
+								.into_iter()
+								.map(|index| (index, state))
 								.collect::<Vec<_>>()
 						})
 						.collect(),
@@ -247,10 +255,18 @@ fn main() -> Result<()> {
 								)),
 							};
 
+							let ids = if ids.0.is_empty() {
+								vec![u32::MAX as usize]
+							} else {
+								ids
+									.0
+									.into_iter()
+									.map(|id| *block_ids.get(&id).unwrap())
+									.collect()
+							};
+
 							ids
-								.0
 								.into_iter()
-								.map(|id| *block_ids.get(&id).unwrap())
 								.map(move |index| (index, state))
 						})
 						.collect(),
