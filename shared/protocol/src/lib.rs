@@ -66,6 +66,7 @@ impl Aerodrome {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Patch {
 	pub profile: Option<String>,
 	pub nodes: HashMap<String, NodeState>,
@@ -107,50 +108,70 @@ impl From<Aerodrome> for Patch {
 	}
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(
+	rename_all = "SCREAMING_SNAKE_CASE",
+	rename_all_fields = "camelCase",
+	tag = "type",
+	content = "data"
+)]
 pub enum Upstream {
-	#[serde(rename = "sub")]
-	Subscribe {
-		icao: String,
-		#[serde(rename = "sub")]
-		subscribe: bool,
-		#[serde(rename = "ctl")]
-		control: bool,
-		#[serde(rename = "ext")]
-		extended: bool,
+	Heartbeat,
+	HeartbeatAck,
+	Close,
+	StateUpdate {
+		object_id: String,
+		state: bool,
 	},
-	#[serde(rename = "set")]
-	Scenery {
-		icao: String,
-		#[serde(rename = "set")]
-		scenery: HashMap<String, bool>,
-	},
-	#[serde(rename = "syn")]
-	Patch {
-		icao: String,
-		#[serde(rename = "syn")]
+	SharedStateUpdate {
+		#[serde(rename = "sharedStatePatch")]
 		patch: Patch,
 	},
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(
+	rename_all = "SCREAMING_SNAKE_CASE",
+	rename_all_fields = "camelCase",
+	tag = "type",
+	content = "data"
+)]
 pub enum Downstream {
-	#[serde(rename = "syn")]
-	Patch {
-		icao: String,
-		#[serde(rename = "syn")]
-		patch: Patch,
-		#[serde(rename = "self")]
-		loopback: bool,
+	Heartbeat,
+	HeartbeatAck,
+	Close,
+	Error {
+		message: String,
 	},
-	#[serde(rename = "epl")]
-	Aircraft {
-		icao: String,
-		#[serde(rename = "epl")]
-		aircraft: Vec<String>,
+	ControllerConnect {
+		controller_id: String,
+	},
+	ControllerDisconnect {
+		controller_id: String,
+	},
+	InitialState {
+		connection_type: String,
+		#[serde(rename = "objects")]
+		scenery: Vec<SceneryObject>,
+		#[serde(rename = "sharedState")]
+		patch: Patch,
+	},
+	StateUpdate {
+		object_id: String,
+		state: bool,
+		controller_id: String,
+	},
+	SharedStateUpdate {
+		#[serde(rename = "sharedStatePatch")]
+		patch: Patch,
+		controller_id: String,
 	},
 	#[serde(other)]
 	Other,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct SceneryObject {
+	id: String,
+	state: bool,
 }
