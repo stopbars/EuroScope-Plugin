@@ -175,3 +175,12 @@ pub struct SceneryObject {
 	id: String,
 	state: bool,
 }
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct State {
+	pub airport: String,
+	pub controllers: Vec<String>,
+	pub pilots: Vec<String>,
+	pub offline: bool,
+}
