@@ -1,7 +1,10 @@
 #include "screen.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
+#include <optional>
 
 #include <gdiplus.h>
 #include <gdiplusgraphics.h>
@@ -57,6 +60,21 @@ union TagFunction {
 
 	operator int() const { return value; }
 };
+
+static std::optional<std::string> normalise_icao(const char *icao) {
+	if (!icao || !icao[0])
+		return std::nullopt;
+
+	std::string s(icao);
+	if (s.size() != 4)
+		return std::nullopt;
+
+	std::transform(s.cbegin(), s.cend(), s.begin(), [](auto ch) {
+		return std::toupper(ch);
+	});
+
+	return s;
+}
 
 Screen::Screen(client::Context *ctx, bool geo, EuroScope::CPlugIn *plugin)
 	: geo_(geo), ctx_(ctx), plugin_(plugin) {
@@ -353,10 +371,14 @@ void Screen::OnFunctionCall(
 		break;
 	}
 
-	case TagFunctionType::SubmitEditAerodrome:
-		client::client_set_aerodrome(screen_, string[0] ? string : nullptr);
-		SaveDataToAsr(SETTING_ACTIVE, "Active aerodrome", string);
+	case TagFunctionType::SubmitEditAerodrome: {
+		auto icao = normalise_icao(string);
+		client::client_set_aerodrome(screen_, icao ? icao->c_str() : nullptr);
+		SaveDataToAsr(
+			SETTING_ACTIVE, "Active aerodrome", icao ? icao->c_str() : ""
+		);
 		break;
+	}
 
 	case TagFunctionType::ToggleControlling:
 		client::client_set_activity(
