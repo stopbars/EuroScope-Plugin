@@ -16,9 +16,12 @@ bars-protocol.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 chrono.workspace = true
-reqwest.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync"] }
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["chrono"] }

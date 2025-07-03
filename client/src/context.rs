@@ -132,10 +132,17 @@ impl Context {
 		}
 
 		if let Some(client) = self.client.as_mut() {
-			if let Err(err) = client.tick() {
-				warn!("{err}");
-				self.disconnect();
-				self.state = ConnectionState::Poisoned;
+			match client.tick() {
+				Ok(messages) => {
+					for message in messages {
+						self.add_message(message);
+					}
+				},
+				Err(err) => {
+					warn!("{err}");
+					self.disconnect();
+					self.state = ConnectionState::Poisoned;
+				},
 			}
 		}
 	}
@@ -214,6 +221,7 @@ impl Context {
 		};
 
 		let options = ConnectOptions {
+			server: config.server,
 			token,
 			port: config.port,
 			callsign: callsign.into(),
@@ -249,6 +257,10 @@ impl Context {
 			Err(err) => {
 				warn!("(proxy channel) {err}");
 				self.add_message("failed to connect".into());
+				self.add_message(
+					"ensure that the plugin is loaded in the main EuroScope instance"
+						.into(),
+				);
 			},
 		}
 	}

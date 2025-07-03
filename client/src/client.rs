@@ -4,7 +4,9 @@ use crate::ActivityState;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
-use bars_config::{BlockCondition, BlockState, EdgeCondition, NodeCondition, ResetCondition};
+use bars_config::{
+	BlockCondition, BlockState, EdgeCondition, NodeCondition, ResetCondition,
+};
 
 use bars_protocol::{BlockState as IpcBlockState, Patch};
 
@@ -29,13 +31,16 @@ impl Client {
 
 	pub fn disconnect(self) {}
 
-	pub fn tick(&mut self) -> Result<()> {
+	pub fn tick(&mut self) -> Result<Vec<String>> {
+		let mut user_messages = Vec::new();
+
 		while let Some(message) = self.channel.recv()? {
 			match message {
 				Downstream::Config { data } => {
 					self
 						.aerodromes
-						.insert(data.icao.clone(), Aerodrome::new(data));
+						.entry(data.icao.clone())
+						.or_insert_with(|| Aerodrome::new(data));
 				},
 				Downstream::Control { icao, control } => {
 					if let Some(aerodrome) = self.aerodromes.get_mut(&icao) {
@@ -54,6 +59,20 @@ impl Client {
 				Downstream::Aircraft { icao, aircraft } => {
 					if let Some(aerodrome) = self.aerodromes.get_mut(&icao) {
 						aerodrome.aircraft = HashSet::from_iter(aircraft);
+					}
+				},
+				Downstream::Error {
+					icao,
+					message,
+					disconnect,
+				} => {
+					user_messages.push(format!(
+						"server: {icao}: {}",
+						message.as_ref().map(|s| s.as_str()).unwrap_or("error"),
+					));
+
+					if disconnect {
+						self.set_tracking(icao, false)?;
 					}
 				},
 			}
@@ -79,7 +98,7 @@ impl Client {
 			}
 		}
 
-		Ok(())
+		Ok(user_messages)
 	}
 
 	pub fn set_tracking(&mut self, icao: String, track: bool) -> Result<()> {

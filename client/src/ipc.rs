@@ -14,6 +14,8 @@ use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
+use tracing::trace;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Upstream {
 	Init,
@@ -35,12 +37,40 @@ pub enum Upstream {
 	},
 }
 
+impl Upstream {
+	pub fn icao(&self) -> Option<&String> {
+		Some(match self {
+			Self::Track { icao, .. } => icao,
+			Self::Control { icao, .. } => icao,
+			Self::Patch { icao, .. } => icao,
+			Self::Scenery { icao, .. } => icao,
+			_ => return None,
+		})
+	}
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Downstream {
-	Config { data: bars_config::Aerodrome },
-	Control { icao: String, control: bool },
-	Patch { icao: String, patch: Patch },
-	Aircraft { icao: String, aircraft: Vec<String> },
+	Config {
+		data: bars_config::Aerodrome,
+	},
+	Control {
+		icao: String,
+		control: bool,
+	},
+	Patch {
+		icao: String,
+		patch: Patch,
+	},
+	Aircraft {
+		icao: String,
+		aircraft: Vec<String>,
+	},
+	Error {
+		icao: String,
+		message: Option<String>,
+		disconnect: bool,
+	},
 }
 
 impl Downstream {
@@ -50,6 +80,7 @@ impl Downstream {
 			Self::Control { icao, .. } => icao,
 			Self::Patch { icao, .. } => icao,
 			Self::Aircraft { icao, .. } => icao,
+			Self::Error { icao, .. } => icao,
 		}
 	}
 }
@@ -70,6 +101,8 @@ impl Channel {
 	}
 
 	pub fn send(&mut self, message: Upstream) -> Result<()> {
+		trace!("cch tx: {message:?}");
+
 		match self {
 			Self::Mpsc { tx, .. } => {
 				tx.send(message)?;
@@ -87,7 +120,10 @@ impl Channel {
 	pub fn recv(&mut self) -> Result<Option<Downstream>> {
 		match self {
 			Self::Mpsc { rx, .. } => match rx.try_recv() {
-				Ok(message) => Ok(Some(message)),
+				Ok(message) => {
+					trace!("cch rx: {message:?}");
+					Ok(Some(message))
+				},
 				Err(TryRecvError::Empty) => Ok(None),
 				Err(_) => bail!("disconnected"),
 			},
@@ -100,7 +136,9 @@ impl Channel {
 					Err(err) => return Err(err.into()),
 				}
 
-				Ok(Some(bincode::deserialize_from(stream)?))
+				let message = bincode::deserialize_from(stream)?;
+				trace!("cch rx: {message:?}");
+				Ok(Some(message))
 			},
 		}
 	}
@@ -191,13 +229,15 @@ pub enum ServerChannelReadHalf {
 
 impl ServerChannelReadHalf {
 	pub async fn recv(&mut self) -> Result<Upstream> {
-		match self {
+		let message = match self {
 			Self::Mpsc(rx) => ServerChannel::recv_mpsc(rx).await,
 			Self::Tcp(rx) => {
 				rx.readable().await?;
 				ServerChannel::recv_tcp(rx).await
 			},
-		}
+		}?;
+		trace!("sch rx: {message:?}");
+		Ok(message)
 	}
 }
 
@@ -208,6 +248,8 @@ pub enum ServerChannelWriteHalf {
 
 impl ServerChannelWriteHalf {
 	pub async fn send(&mut self, message: Downstream) -> Result<()> {
+		trace!("sch tx: {message:?}");
+
 		match self {
 			Self::Mpsc(tx) => ServerChannel::send_mpsc(tx, message).await,
 			Self::Tcp(tx) => ServerChannel::send_tcp(tx, message).await,
