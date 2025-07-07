@@ -448,8 +448,9 @@ impl AerodromeManager {
 					let mut socket = socket.lock().await;
 					match tokio::time::timeout(SOCKET_POLL_TIMEOUT, socket.next()).await {
 						Ok(Some(Ok(Message::Text(message)))) => {
-							let Ok(data) =
-								serde_json::from_str::<NetDownstream<Patch>>(message.as_str())
+							type Message = NetDownstream<Option<Patch>>;
+
+							let Ok(data) = serde_json::from_str::<Message>(message.as_str())
 							else {
 								warn!("net downstream deserialisation failed");
 								continue
@@ -476,13 +477,37 @@ impl AerodromeManager {
 									warn!("server: {message}");
 									Ok(())
 								},
-								NetDownstream::InitialState { patch, .. }
-								| NetDownstream::SharedStateUpdate { patch, .. } => {
-									this.data.lock().await.state.apply_patch(patch.clone());
+								state @ NetDownstream::InitialState { .. }
+								| state @ NetDownstream::SharedStateUpdate { .. } => {
+									let (patch, control) = match state {
+										NetDownstream::InitialState {
+											connection_type,
+											patch,
+											..
+										} => (patch, Some(connection_type == "controller")),
+										NetDownstream::SharedStateUpdate { patch, .. } => {
+											(patch, None)
+										},
+										_ => unreachable!(),
+									};
+									let patch = patch.unwrap_or_default();
+
+									let mut data = this.data.lock().await;
+
+									data.state.apply_patch(patch.clone());
 									this.broadcast(Downstream::Patch {
 										icao: this.icao.clone(),
 										patch,
 									});
+
+									if let Some(control) = control {
+										data.controlling = control;
+										this.broadcast(Downstream::Control {
+											icao: this.icao.clone(),
+											control,
+										});
+									}
+
 									Ok(())
 								},
 								NetDownstream::StateUpdate { .. }
@@ -648,11 +673,13 @@ impl AerodromeManager {
 	}
 
 	async fn control(&self, control: bool) {
-		self.data.lock().await.controlling = control;
-		self.broadcast(Downstream::Control {
-			icao: self.icao.clone(),
-			control,
-		});
+		if self.server.is_none() {
+			self.data.lock().await.controlling = control;
+			self.broadcast(Downstream::Control {
+				icao: self.icao.clone(),
+				control,
+			});
+		}
 	}
 
 	async fn patch(&self, patch: Patch) -> Result<()> {
