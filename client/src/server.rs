@@ -448,7 +448,9 @@ impl AerodromeManager {
 					let mut socket = socket.lock().await;
 					match tokio::time::timeout(SOCKET_POLL_TIMEOUT, socket.next()).await {
 						Ok(Some(Ok(Message::Text(message)))) => {
-							let Ok(data) = serde_json::from_str(message.as_str()) else {
+							let Ok(data) =
+								serde_json::from_str::<NetDownstream<Patch>>(message.as_str())
+							else {
 								warn!("net downstream deserialisation failed");
 								continue
 							};

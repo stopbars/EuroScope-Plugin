@@ -115,7 +115,7 @@ impl From<Aerodrome> for Patch {
 	tag = "type",
 	content = "data"
 )]
-pub enum Upstream {
+pub enum Upstream<P = Patch> {
 	Heartbeat,
 	HeartbeatAck,
 	Close,
@@ -125,7 +125,7 @@ pub enum Upstream {
 	},
 	SharedStateUpdate {
 		#[serde(rename = "sharedStatePatch")]
-		patch: Patch,
+		patch: P,
 	},
 }
 
@@ -136,7 +136,7 @@ pub enum Upstream {
 	tag = "type",
 	content = "data"
 )]
-pub enum Downstream {
+pub enum Downstream<P = Patch> {
 	Heartbeat,
 	HeartbeatAck,
 	Close,
@@ -154,7 +154,7 @@ pub enum Downstream {
 		#[serde(rename = "objects")]
 		scenery: Vec<SceneryObject>,
 		#[serde(rename = "sharedState")]
-		patch: Patch,
+		patch: P,
 	},
 	StateUpdate {
 		object_id: String,
@@ -163,7 +163,7 @@ pub enum Downstream {
 	},
 	SharedStateUpdate {
 		#[serde(rename = "sharedStatePatch")]
-		patch: Patch,
+		patch: P,
 		controller_id: String,
 	},
 	#[serde(other)]
@@ -172,8 +172,8 @@ pub enum Downstream {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SceneryObject {
-	id: String,
-	state: bool,
+	pub id: String,
+	pub state: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
