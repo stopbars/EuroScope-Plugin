@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{self, Debug, Formatter};
 use std::io::{ErrorKind, Write};
 use std::net::{Ipv4Addr, TcpStream};
 
@@ -85,6 +86,18 @@ impl Downstream {
 	}
 }
 
+struct HideConfig<'a>(&'a Downstream);
+
+impl<'a> Debug for HideConfig<'a> {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		if matches!(self.0, Downstream::Config { .. }) {
+			f.debug_struct("Config").finish_non_exhaustive()
+		} else {
+			write!(f, "{:?}", self.0)
+		}
+	}
+}
+
 pub enum Channel {
 	Mpsc {
 		rx: UnboundedReceiver<Downstream>,
@@ -121,7 +134,7 @@ impl Channel {
 		match self {
 			Self::Mpsc { rx, .. } => match rx.try_recv() {
 				Ok(message) => {
-					trace!("cch rx: {message:?}");
+					trace!("cch rx: {:?}", HideConfig(&message));
 					Ok(Some(message))
 				},
 				Err(TryRecvError::Empty) => Ok(None),
@@ -137,7 +150,7 @@ impl Channel {
 				}
 
 				let message = bincode::deserialize_from(stream)?;
-				trace!("cch rx: {message:?}");
+				trace!("cch rx: {:?}", HideConfig(&message));
 				Ok(Some(message))
 			},
 		}
@@ -248,7 +261,7 @@ pub enum ServerChannelWriteHalf {
 
 impl ServerChannelWriteHalf {
 	pub async fn send(&mut self, message: Downstream) -> Result<()> {
-		trace!("sch tx: {message:?}");
+		trace!("sch tx: {:?}", HideConfig(&message));
 
 		match self {
 			Self::Mpsc(tx) => ServerChannel::send_mpsc(tx, message).await,
