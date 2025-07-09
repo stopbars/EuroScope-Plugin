@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use bars_config::{
-	BlockCondition, BlockState, EdgeCondition, NodeCondition, ResetCondition,
+	BlockCondition, BlockState, EdgeCondition, ElementCondition, NodeCondition,
+	ResetCondition,
 };
 
 use bars_protocol::{BlockState as IpcBlockState, Patch};
@@ -81,7 +82,8 @@ impl Client {
 		for (icao, aerodrome) in &mut self.aerodromes {
 			aerodrome.tick();
 
-			let patch = std::mem::take(&mut aerodrome.pending_patch);
+			let (patch, scenery) = aerodrome.take_pending();
+
 			if !patch.is_empty() {
 				self.channel.send(Upstream::Patch {
 					icao: icao.clone(),
@@ -89,7 +91,6 @@ impl Client {
 				})?;
 			}
 
-			let scenery = std::mem::take(&mut aerodrome.pending_scenery);
 			if !scenery.is_empty() {
 				self.channel.send(Upstream::Scenery {
 					icao: icao.clone(),
@@ -158,7 +159,10 @@ pub struct Aerodrome {
 	aircraft: HashSet<String>,
 
 	pending_patch: Patch,
-	pending_scenery: HashMap<String, bool>,
+	pending_nodes: Vec<usize>,
+	previous_edges: Vec<bool>,
+	node_dependencies: Vec<Vec<usize>>,
+	edge_dependencies: Vec<Vec<usize>>,
 
 	node_timers: Vec<(usize, Instant)>,
 	block_timers: Vec<(usize, Instant)>,
@@ -179,7 +183,10 @@ impl Aerodrome {
 			blocks: Vec::new(),
 			aircraft: HashSet::new(),
 			pending_patch: Default::default(),
-			pending_scenery: HashMap::new(),
+			previous_edges: Vec::new(),
+			pending_nodes: Vec::new(),
+			node_dependencies: Vec::new(),
+			edge_dependencies: Vec::new(),
 			node_timers: Vec::new(),
 			block_timers: Vec::new(),
 		};
@@ -223,6 +230,21 @@ impl Aerodrome {
 				));
 
 				*node_borders += 1;
+			}
+		}
+
+		this
+			.node_dependencies
+			.resize(this.config.nodes.len(), Vec::new());
+		this
+			.edge_dependencies
+			.resize(this.config.edges.len(), Vec::new());
+
+		for (i, element) in this.config.elements.iter().enumerate() {
+			match element.condition {
+				ElementCondition::Fixed(_) => (),
+				ElementCondition::Node(node) => this.node_dependencies[node].push(i),
+				ElementCondition::Edge(edge) => this.edge_dependencies[edge].push(i),
 			}
 		}
 
@@ -306,6 +328,56 @@ impl Aerodrome {
 		}
 	}
 
+	fn take_pending(&mut self) -> (Patch, HashMap<String, bool>) {
+		let next_edges = self.calculate_edges();
+
+		let patch = std::mem::take(&mut self.pending_patch);
+		let nodes = std::mem::take(&mut self.pending_nodes);
+		let mut scenery = HashMap::new();
+
+		if patch.profile.is_some() {
+			for element in &self.config.elements {
+				scenery.insert(
+					element.id.clone(),
+					match element.condition {
+						ElementCondition::Fixed(state) => state,
+						ElementCondition::Edge(edge) => next_edges[edge],
+						ElementCondition::Node(node) => *self.nodes[node].state(),
+					},
+				);
+			}
+		} else {
+			for i in nodes {
+				for element in &self.node_dependencies[i] {
+					scenery.insert(
+						self.config.elements[*element].id.clone(),
+						*self.nodes[i].state(),
+					);
+				}
+			}
+
+			for (i, (prev, next)) in
+				next_edges.iter().zip(&self.previous_edges).enumerate()
+			{
+				if prev != next {
+					for element in &self.edge_dependencies[i] {
+						scenery.insert(self.config.elements[*element].id.clone(), *next);
+					}
+				}
+			}
+		}
+
+		self.previous_edges = next_edges;
+
+		(patch, scenery)
+	}
+
+	fn calculate_edges(&self) -> Vec<bool> {
+		(0..self.config.edges.len())
+			.map(|i| self.edge_state(i))
+			.collect()
+	}
+
 	fn set_default_state(&mut self, patch: bool) {
 		self.nodes = Vec::with_capacity(self.config.nodes.len());
 		self.blocks = vec![
@@ -332,6 +404,7 @@ impl Aerodrome {
 				HashMap::from_iter(self.nodes.iter().enumerate().map(
 					|(node, state)| (self.config.nodes[node].id.clone(), *state.state()),
 				));
+			self.pending_nodes = (0..self.nodes.len()).collect();
 			self.pending_patch.blocks = HashMap::from_iter(
 				self.blocks.iter().enumerate().map(|(block, state)| {
 					(
@@ -340,6 +413,8 @@ impl Aerodrome {
 					)
 				}),
 			);
+		} else {
+			self.previous_edges = self.calculate_edges();
 		}
 
 		self.node_timers.clear();
@@ -352,6 +427,7 @@ impl Aerodrome {
 			.pending_patch
 			.nodes
 			.insert(self.config.nodes[node].id.clone(), state);
+		self.pending_nodes.push(node);
 
 		self.node_timers.retain(|(node_, _)| node_ != &node);
 
@@ -448,6 +524,7 @@ impl Aerodrome {
 		}
 
 		self.pending_patch.nodes = nodes;
+		self.pending_nodes = preset.nodes.iter().map(|(i, _)| *i).collect();
 		self.pending_patch.blocks = blocks;
 
 		self.node_timers.clear();
