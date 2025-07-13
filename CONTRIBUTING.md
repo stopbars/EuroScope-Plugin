@@ -1,75 +1,69 @@
-# Contributing to BARS xxx
+# Contributing to the EuroScope plugin
 
-Thank you for your interest in contributing to BARS xxx! This guide will help you get started with contributing.
+Thank you for your interest in contributing to the BARS EuroScope plugin! This guide will help you get started with contributing.
 
 ## Getting Started
 
+These instructions are designed for building on Linux systems.
+
 ### Prerequisites
 
--
--
--
--
+- Standard development environment (eg. `build-essential`)
+- Rust
+	- Cargo
+	- `i686-pc-windows-msvc` target
+- Clang
+	- MSVC compatibility tools (eg. `clang-cl`)
+	- `i686-pc-windows-msvc` target
+- Windows SDK (32-bit)
+	- Install with [Xwin](https://github.com/Jake-Shadle/xwin/)
 
 ### Development Setup
 
 1. **Fork and Clone**
 
    ```bash
-   git clone https://github.com/stopbars/xxx.git
-
-   cd xxx
+   git clone https://github.com/stopbars/EuroScope-Plugin
+   cd EuroScope-Plugin
    ```
    <br>
 
-2. **Install Dependencies**
+2. **Configure Environment Variables**
 
    ```bash
-   
-   ```
+   # set according to the clang version installed
+   export XCC=clang-cl-<version>
+   export XLD=lld-link-<version>
 
-   <br>
-
-3. **Configure Development Environment**
-
-   **Setup environment variables:**
-
-   <br>
-
-   ```bash
-   copy .dev.vars.example .dev.vars
+   # set according to xwin SDK location, such that $XWIN/{crt,sdk}/ exist
+   export XWIN=/path/to/xwin/install/dir
    ```
 
    <br>
 
-4. **Start Development Server**
+3. **Build Plugin**
 
    ```bash
-   
+   make
    ```
 
 ## Development Guidelines
 
 ### Code Style
 
--
--
--
--
+- C/++ code shall follow the ClangFormat configuration provided
+- Rust code shall follow the Rustfmt configuration provided
+- Formatting can be applied to all code by running `make format`
 
-### Guideline
+### Project Structure
 
--
--
--
--
-
-### Guideline
-
--
--
--
--
+- client: Rust components of the EuroScope plugin, including interaction with the BARS API
+- plugin: C++ components of the EuroScope plugin, including interaction with the EuroScope API
+- shared: shared libraries and data
+	- config: data structures and parsing for the EuroScope plugin configuration
+	- protocol: data structures for the BARS API protocol and EuroScope plugin internal synchronisation formats
+- tool: executables supporting development or use of the plugin
+	- server: a basic mock of the BARS API server
 
 ## Contribution Process
 
@@ -106,6 +100,8 @@ Use clear, descriptive commit messages:
 - `fix: resolve stopbar state synchronization issue`
 - `docs: update contribution documentation`
 
+Commit messages should follow guidelines from [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Where appropriate, include a scope in the commit message; see the commit history for extant scopes.
+
 ### 5. Push and Create Pull Request
 
 ```bash
@@ -117,30 +113,6 @@ Create a pull request with:
 - Clear description of changes
 - Reference to related issues
 - Screenshots for UI changes (if applicable)
-
-## Testing
-
-### Testing
-
-1. 
-2. 
-3. 
-4. 
-
-
-## Common Issues
-
-### Issue
-
--
--
--
-
-### Issue
-
--
--
-
 
 ## Getting Help
 
