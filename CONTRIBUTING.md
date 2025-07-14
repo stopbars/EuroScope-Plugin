@@ -1,4 +1,4 @@
-# Contributing to the EuroScope plugin
+# Contributing to the BARS EuroScope plugin
 
 Thank you for your interest in contributing to the BARS EuroScope plugin! This guide will help you get started with contributing.
 
@@ -117,7 +117,7 @@ Create a pull request with:
 ## Getting Help
 
 - **Discord**: Join the BARS [Discord](https://stopbars.com/discord) server for real-time help
-- **GitHub Issues**: [Create an issue](https://github.com/stopbars/xxx/issues/new) for bugs or feature requests
+- **GitHub Issues**: [Create an issue](https://github.com/stopbars/EuroScope-Plugin/issues/new) for bugs or feature requests
 - **Code Review**: Ask for reviews on complex changes
 
 ## Recognition
