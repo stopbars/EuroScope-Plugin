@@ -4,7 +4,7 @@
 
 **stopbars/EuroScope-Plugin**
 
-[![Github Issues](https://img.shields.io/github/issues/stopbars/EuroScope-Plugin)](https://github.com/stopbars/EuroScope-Plugin/repo)
+[![GitHub Issues](https://img.shields.io/github/issues/stopbars/EuroScope-Plugin)](https://github.com/stopbars/EuroScope-Plugin/repo)
 ![GitHub License](https://img.shields.io/github/license/stopbars/EuroScope-Plugin)
 [![Discord](https://img.shields.io/discord/1323993176318414889.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://stopbars.com/discord)
 
