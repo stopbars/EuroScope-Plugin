@@ -5,7 +5,7 @@
 	<h1 align="center"><b>stopbars/EuroScope-Plugin</b></h1>
 	<p align="center">
     <br />
-		BARS EuroScope Plugin enables controllers to manage and update airport lighting that directly reflects into simulators, synchronizing lighting state between controllers and pilots, directly through the EuroScope 					controller client.
+		BARS EuroScope Plugin enables controllers to manage and update airport lighting that directly reflects into simulators, synchronizing lighting state between controllers and pilots, directly through the EuroScope client.
     <br />
     <br />
     <a href="https://stopbars.com"><strong>stopbars.com »</strong></a>
