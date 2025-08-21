@@ -27,7 +27,7 @@
   <a href="https://opensource.org/license/mit">
     <img src="https://img.shields.io/static/v1?label=Licence&message=MIT&color=000" />
   </a>
-	  <a href="https://docs.stopbars.com/eurosccope" target="_blank" rel="noopener noreferrer">
+	  <a href="https://docs.stopbars.com/euroscope" target="_blank" rel="noopener noreferrer">
     <img src="https://img.shields.io/badge/Documentation-e81919.svg" alt="Documentation">
   </a>
   <br />
